@@ -1,10 +1,17 @@
+import 'package:closecart/Screens/Auth/login.dart';
+import 'package:closecart/Screens/Auth/register.dart';
+import 'package:closecart/Screens/Auth/splash.dart';
 import 'package:closecart/Screens/BottomNav.dart';
-import 'package:closecart/Screens/home.dart';
+import 'package:closecart/Screens/editProfile.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:closecart/Util/theme.dart';
 
-void main() {
+import 'package:hive_flutter/hive_flutter.dart';
+
+void main() async {
+  await Hive.initFlutter();
+  await Hive.openBox('authBox');
   runApp(MainApp());
 }
 
@@ -44,7 +51,14 @@ class MainApp extends StatelessWidget {
             theme: lightTheme,
             darkTheme: darkTheme,
             themeMode: themeProvider.themeMode,
-            home: BottomNav(),
+            initialRoute: '/',
+            routes: {
+              '/': (context) => const SplashScreen(),
+              '/login': (context) => const LoginPage(),
+              '/register': (context) => const RegisterPage(),
+              '/home': (context) => const BottomNav(),
+              '/editProfile': (context) => const EditProfilePage(),
+            },
           );
         },
       ),

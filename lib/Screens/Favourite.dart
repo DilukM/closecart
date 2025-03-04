@@ -10,6 +10,13 @@ class FavouritePage extends StatefulWidget {
 class _FavouritePageState extends State<FavouritePage> {
   @override
   Widget build(BuildContext context) {
-    return const Placeholder();
+    return Scaffold(
+      body: SingleChildScrollView(
+        child: SafeArea(
+            child: Column(
+          children: [],
+        )),
+      ),
+    );
   }
 }

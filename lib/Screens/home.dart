@@ -1,11 +1,7 @@
-import 'package:closecart/Util/colors.dart';
 import 'package:closecart/Widgets/categoryItem.dart';
 import 'package:closecart/Widgets/offerCard.dart';
 import 'package:closecart/Widgets/sectionTile.dart';
-import 'package:closecart/Widgets/sidebar.dart';
-import 'package:closecart/main.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -17,40 +13,7 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: Column(
-          children: [
-            Text(
-              'Your Location',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            Text(
-              themeProvider.currentTheme,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              child: Icon(Icons.person,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer),
-            ),
-          ),
-        ],
-      ),
-      drawer: ThemeDrawer(),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: SingleChildScrollView(
@@ -93,7 +56,7 @@ class _HomeState extends State<Home> {
                   ),
                 ],
               ),
-              SizedBox(height: 16),
+              SizedBox(height: 30),
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -119,11 +82,11 @@ class _HomeState extends State<Home> {
                   ],
                 ),
               ),
-              SizedBox(height: 24),
+              SizedBox(height: 30),
               SectionTitle(title: 'Featured Offers', onViewAll: () {}),
               SizedBox(height: 16),
               Container(
-                height: 200,
+                height: 210,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
@@ -132,6 +95,11 @@ class _HomeState extends State<Home> {
                             'https://www.foodiesfeed.com/wp-content/uploads/2023/06/burger-with-melted-cheese.jpg',
                         title: 'McDonald\'s',
                         rating: 4.5),
+                    OfferCard(
+                        imageUrl:
+                            'https://www.foodiesfeed.com/wp-content/uploads/2023/06/burger-with-melted-cheese.jpg',
+                        title: 'Starbucks',
+                        rating: 4.7),
                     OfferCard(
                         imageUrl:
                             'https://www.foodiesfeed.com/wp-content/uploads/2023/06/burger-with-melted-cheese.jpg',
