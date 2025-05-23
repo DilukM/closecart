@@ -5,10 +5,10 @@ class AppColors {
   static const white = const Color(0xFFFFFFFF);
   static const black = const Color(0xFF000000);
 
-  static const MaterialColor primarySwatch = Colors.yellow;
-  static const MaterialColor primaryDarkSwatch = Colors.yellow;
+  static const MaterialColor primarySwatch = Colors.amber;
+  static const MaterialColor primaryDarkSwatch = Colors.amber;
 
-  static const Color primaryLight = Color.fromARGB(255, 255, 175, 3);
+  static const Color primaryLight = Color.fromARGB(255, 234, 141, 1);
   static const Color primaryDark = Color.fromARGB(255, 255, 175, 3);
 
   static const Color accentLight = Color.fromARGB(255, 251, 251, 187);

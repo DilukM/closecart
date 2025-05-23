@@ -1,4 +1,5 @@
 import 'package:closecart/Widgets/offerCard.dart';
+import 'package:closecart/model/offerModel.dart';
 import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -14,8 +15,8 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  List<dynamic> offers = [];
-  List<dynamic> filteredOffers = [];
+  List<Offer> offers = [];
+  List<Offer> filteredOffers = [];
   late Dio dio;
   String searchQuery = '';
   String sortOption = 'None';
@@ -56,8 +57,13 @@ class _SearchPageState extends State<SearchPage> {
       if (response.statusCode == 200) {
         final responseBody = response.data;
         if (responseBody != null && responseBody['data'] != null) {
+          // Convert JSON data to List of Offer objects
+          List<Offer> offersList = (responseBody['data'] as List)
+              .map((offerJson) => Offer.fromJson(offerJson))
+              .toList();
+
           setState(() {
-            offers = responseBody['data'];
+            offers = offersList;
             filteredOffers = offers;
           });
         } else {
@@ -75,7 +81,7 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       searchQuery = query;
       filteredOffers = offers.where((offer) {
-        final title = offer['title'].toLowerCase();
+        final title = offer.title.toLowerCase();
         return title.contains(query.toLowerCase());
       }).toList();
     });
@@ -85,10 +91,9 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       sortOption = option;
       if (option == 'Discount') {
-        filteredOffers.sort((a, b) => double.parse(b['discount'].toString())
-            .compareTo(double.parse(a['discount'].toString())));
+        filteredOffers.sort((a, b) => b.discount.compareTo(a.discount));
       } else if (option == 'Alphabetical') {
-        filteredOffers.sort((a, b) => a['title'].compareTo(b['title']));
+        filteredOffers.sort((a, b) => a.title.compareTo(b.title));
       }
     });
   }
@@ -212,11 +217,7 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                       itemCount: filteredOffers.length,
                       itemBuilder: (context, index) {
-                        final offer = filteredOffers[index];
-                        return OfferCard(
-                            imageUrl: offer['imageUrl'],
-                            title: offer['title'],
-                            rating: double.parse(offer['discount'].toString()));
+                        return OfferCard(offer: filteredOffers[index]);
                       },
                     ),
             ],

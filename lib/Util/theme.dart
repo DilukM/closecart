@@ -20,6 +20,7 @@ final ThemeData lightTheme = ThemeData(
   brightness: Brightness.light,
   appBarTheme: AppBarTheme(
     color: Colors.transparent,
+    surfaceTintColor: Colors.transparent,
     iconTheme: IconThemeData(color: AppColors.black),
   ),
   textTheme: TextTheme(
@@ -63,9 +64,9 @@ final ThemeData darkTheme = ThemeData(
   ),
   useMaterial3: true,
   brightness: Brightness.dark,
-  primaryColor: AppColors.primaryDark,
   appBarTheme: AppBarTheme(
     color: Colors.transparent,
+    surfaceTintColor: Colors.transparent,
     iconTheme: IconThemeData(color: AppColors.white),
   ),
   textTheme: TextTheme(

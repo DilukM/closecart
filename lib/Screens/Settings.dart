@@ -1,4 +1,8 @@
+import 'package:closecart/Screens/editProfile.dart';
+import 'package:closecart/services/authService.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -24,6 +28,28 @@ class _SettingsPageState extends State<SettingsPage> {
     'Health'
   ];
   final List<String> _selectedCategories = ['Food', 'Fashion', 'Tech'];
+  final AuthService _authService = AuthService();
+  Map<dynamic, dynamic>? _profileData;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData();
+  }
+
+  Future<void> _loadProfileData() async {
+    var box = Hive.box('authBox');
+    var profileData = box.get('profileData');
+
+    if (profileData == null) {
+      // Fetch profile data from the backend
+      profileData = await _authService.fetchProfileData();
+    }
+
+    setState(() {
+      _profileData = profileData!;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,39 +64,6 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSectionHeader(context, 'Profile'),
               const SizedBox(height: 16),
               _buildProfileCard(context),
-              const SizedBox(height: 24),
-
-              // Account Settings
-              _buildSectionHeader(context, 'Account Settings'),
-              const SizedBox(height: 16),
-              _buildSettingsCard(
-                context,
-                [
-                  _buildSettingsTile(
-                    context,
-                    'Change Password',
-                    Icons.lock_outline,
-                    onTap: () => _showChangePasswordDialog(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingsTile(
-                    context,
-                    'Logout',
-                    Icons.logout,
-                    iconColor: Theme.of(context).colorScheme.primary,
-                    onTap: () => _showLogoutConfirmation(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingsTile(
-                    context,
-                    'Delete Account',
-                    Icons.delete_outline,
-                    iconColor: Theme.of(context).colorScheme.error,
-                    textColor: Theme.of(context).colorScheme.error,
-                    onTap: () => _showDeleteAccountConfirmation(context),
-                  ),
-                ],
-              ),
               const SizedBox(height: 24),
 
               // Location Settings
@@ -90,7 +83,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       });
                     },
                   ),
-                  _buildDivider(),
+                  _buildDivider(context),
                   _buildGeofenceRadiusSlider(context),
                 ],
               ),
@@ -111,6 +104,39 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 24),
+              // Account Settings
+              _buildSectionHeader(context, 'Account Settings'),
+              const SizedBox(height: 16),
+              _buildSettingsCard(
+                context,
+                [
+                  _buildSettingsTile(
+                    context,
+                    'Change Password',
+                    Icons.lock_outline,
+                    onTap: () => _showChangePasswordDialog(context),
+                  ),
+                  _buildDivider(context),
+                  _buildSettingsTile(
+                    context,
+                    'Logout',
+                    Icons.logout,
+                    iconColor: Theme.of(context).colorScheme.primary,
+                    onTap: () => _showLogoutConfirmation(context),
+                  ),
+                  _buildDivider(context),
+                  _buildSettingsTile(
+                    context,
+                    'Delete Account',
+                    Icons.delete_outline,
+                    iconColor: Theme.of(context).colorScheme.error,
+                    textColor: Theme.of(context).colorScheme.error,
+                    onTap: () => _showDeleteAccountConfirmation(context),
+                  ),
+                ],
+              ),
+
               const SizedBox(height: 36),
             ],
           ),
@@ -133,6 +159,9 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildProfileCard(BuildContext context) {
+    if (_profileData == null) {
+      return Center(child: CircularProgressIndicator());
+    }
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -147,31 +176,48 @@ class _SettingsPageState extends State<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Profile Image
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                        Theme.of(context)
-                            .colorScheme
-                            .secondary
-                            .withOpacity(0.7),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      Icons.person,
-                      size: 40,
-                      color: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  ),
-                ),
+                _profileData!['imageUrl'] != null
+                    ? Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                            image: NetworkImage(
+                              _profileData!['imageUrl'],
+                            ),
+                            fit: BoxFit.cover,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      )
+                    : Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.7),
+                              Theme.of(context)
+                                  .colorScheme
+                                  .secondary
+                                  .withOpacity(0.7),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons.person,
+                            size: 40,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
                 const SizedBox(width: 20),
                 // Profile Info
                 Expanded(
@@ -179,14 +225,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'John Doe',
+                        _profileData!['name'],
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'john.doe@example.com',
+                        _profileData!['email'],
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: Theme.of(context)
                                   .colorScheme
@@ -196,7 +242,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '+1 123 456 7890',
+                        _profileData!['phone'],
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: Theme.of(context)
                                   .colorScheme
@@ -215,7 +261,9 @@ class _SettingsPageState extends State<SettingsPage> {
               child: OutlinedButton(
                 onPressed: () {
                   // Navigate to edit profile page
-                  Navigator.pushNamed(context, '/editProfile');
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return EditProfilePage(profileData: _profileData);
+                  }));
                 },
                 style: OutlinedButton.styleFrom(
                   shape: RoundedRectangleBorder(
@@ -402,8 +450,13 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildDivider() {
-    return const Divider(height: 1, indent: 64);
+  Widget _buildDivider(BuildContext context) {
+    return Divider(
+      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+      height: 1,
+      indent: MediaQuery.of(context).size.width * 0.05,
+      endIndent: MediaQuery.of(context).size.width * 0.05,
+    );
   }
 
   // Dialog methods

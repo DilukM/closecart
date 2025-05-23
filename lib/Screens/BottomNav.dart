@@ -5,6 +5,7 @@ import 'package:closecart/Screens/home.dart';
 import 'package:closecart/Util/colors.dart';
 import 'package:closecart/Widgets/sidebar.dart';
 import 'package:closecart/main.dart';
+import 'package:closecart/services/location_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -20,6 +21,8 @@ class BottomNav extends StatefulWidget {
 
 class _BottomNavState extends State<BottomNav> {
   late int _selectedIndex;
+  String locationName = 'Fetching location...';
+  bool isLoadingLocation = true;
 
   static List<Widget> _pages = <Widget>[
     Home(),
@@ -32,6 +35,52 @@ class _BottomNavState extends State<BottomNav> {
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    // Delay location fetch slightly to avoid issues during app startup
+    Future.delayed(Duration(milliseconds: 300), () {
+      if (mounted) _fetchUserLocation();
+    });
+  }
+
+  @override
+  void dispose() {
+    // Ensure we're properly cleaning up any location resources
+    super.dispose();
+  }
+
+  Future<void> _fetchUserLocation() async {
+    if (!mounted) return;
+
+    try {
+      setState(() {
+        isLoadingLocation = true;
+      });
+
+      final userLocation = await LocationService.getCurrentLocation();
+
+      if (!mounted) return;
+
+      setState(() {
+        locationName = userLocation.placeName;
+        isLoadingLocation = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        locationName = 'Location unavailable';
+        isLoadingLocation = false;
+      });
+
+      print('Error fetching location: $e');
+
+      // Optional: Add a retry mechanism after a delay
+
+      Future.delayed(Duration(seconds: 5), () {
+        if (mounted && locationName == 'Location unavailable') {
+          _fetchUserLocation();
+        }
+      });
+    }
   }
 
   void _onItemTapped(int index) {
@@ -48,14 +97,19 @@ class _BottomNavState extends State<BottomNav> {
       appBar: AppBar(
         centerTitle: true,
         title: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              'Your Location',
+              isLoadingLocation ? 'Fetching location...' : 'Your Location',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            Text(
-              themeProvider.currentTheme,
-              style: Theme.of(context).textTheme.titleMedium,
+            SizedBox(
+              width: MediaQuery.of(context).size.width * 0.6,
+              child: Text(
+                textAlign: TextAlign.center,
+                isLoadingLocation ? '...' : locationName,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
           ],
         ),
@@ -69,9 +123,17 @@ class _BottomNavState extends State<BottomNav> {
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              child: Icon(Icons.person,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer),
+              backgroundColor:
+                  Theme.of(context).colorScheme.secondary.withOpacity(0.3),
+              child: IconButton(
+                icon: Icon(
+                  Icons.notifications_active_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: () {
+                  // Handle notification button press
+                },
+              ),
             ),
           ),
         ],
@@ -104,7 +166,7 @@ class _BottomNavState extends State<BottomNav> {
             ),
             BottomNavigationBarItem(
               icon: Icon(
-                Icons.person,
+                Icons.settings,
                 size: 20,
               ),
               label: 'Settings',

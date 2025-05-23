@@ -8,10 +8,23 @@ import 'package:provider/provider.dart';
 import 'package:closecart/Util/theme.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:closecart/services/cache_service.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Hive
   await Hive.initFlutter();
+
+  // Open Hive boxes
   await Hive.openBox('authBox');
+
+  // Initialize cache service
+  await CacheService.init();
+
+  // Clean expired cache on app start
+  await CacheService.cleanExpiredCache();
+
   runApp(MainApp());
 }
 
@@ -57,7 +70,6 @@ class MainApp extends StatelessWidget {
               '/login': (context) => const LoginPage(),
               '/register': (context) => const RegisterPage(),
               '/home': (context) => const BottomNav(),
-              '/editProfile': (context) => const EditProfilePage(),
             },
           );
         },

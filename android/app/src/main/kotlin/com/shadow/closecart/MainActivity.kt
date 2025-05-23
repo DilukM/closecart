@@ -1,4 +1,4 @@
-package com.example.closecart
+package com.shadow.closecart
 
 import io.flutter.embedding.android.FlutterActivity
 
