@@ -69,7 +69,8 @@ class Offer {
       shop != null ? shop!['name'] ?? 'Unknown Shop' : 'Unknown Shop';
 
   @override
-  String toString() => 'Offer(id: $id, title: $title)';
+  String toString() =>
+      'Offer(id: $id, title: $title, shopId: $shopId, shop: $shop)';
 
   @override
   bool operator ==(Object other) {

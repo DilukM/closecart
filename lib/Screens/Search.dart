@@ -1,5 +1,7 @@
 import 'package:closecart/Widgets/offerCard.dart';
 import 'package:closecart/model/offerModel.dart';
+import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/services/shop_cache_service.dart';
 import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';

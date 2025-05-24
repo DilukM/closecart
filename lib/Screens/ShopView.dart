@@ -124,6 +124,8 @@ class _ShopViewState extends State<ShopView>
     }
   }
 
+  
+
   Future<void> _launchMap() async {
     if (_shop == null) return;
 

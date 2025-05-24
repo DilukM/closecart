@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:closecart/services/geofence_service.dart';
+import 'package:closecart/services/shop_cache_service.dart';
+import 'package:closecart/model/shopModel.dart';
 
 class RecommendationService {
   static const String baseUrl =
@@ -23,7 +26,6 @@ class RecommendationService {
       final cachedData = box.get(cacheKey);
 
       if (cachedData != null) {
-        print("Found cached recommendations for key: $cacheKey");
         return {
           'success': true,
           'recommendations': jsonDecode(cachedData),
@@ -104,8 +106,6 @@ class RecommendationService {
           ? Uri.parse('$baseUrl/$userId?city=$city')
           : Uri.parse('$baseUrl/$userId');
 
-      print('Fetching recommendations from: $uri');
-
       // Make API request
       final response = await http.get(uri);
 
@@ -119,6 +119,9 @@ class RecommendationService {
         } else if (data is Map && data.containsKey('recommendations')) {
           recommendedOffers = data['recommendations'] as List;
         }
+
+        // Extract shop data from offers and cache it
+        _extractAndCacheShopData(recommendedOffers);
 
         // Save to cache
         var box = Hive.box('authBox');
@@ -150,6 +153,173 @@ class RecommendationService {
       }
 
       return {'success': false, 'message': 'Error: ${error.toString()}'};
+    }
+  }
+
+  /// Extract shop data from offers and cache it
+  static void _extractAndCacheShopData(List<dynamic> offers) {
+    try {
+      List<Shop> shops = [];
+
+      for (var offer in offers) {
+        if (offer is Map<String, dynamic> &&
+            offer.containsKey('shop') &&
+            offer['shop'] != null) {
+          // If the offer has complete shop data
+          shops.add(Shop.fromJson(offer['shop']));
+        } else if (offer is Map<String, dynamic> &&
+            offer.containsKey('shopId') &&
+            offer['shopId'] != null &&
+            offer.containsKey('storeName')) {
+          // If the offer only has basic shop info
+          Shop basicShop = Shop(
+            id: offer['shopId'].toString(),
+            name: offer['storeName'].toString(),
+            address: offer['address']?.toString() ?? '',
+            category: offer['category']?.toString() ?? 'Other',
+            location: Location(coordinates: [
+              double.tryParse(offer['longitude'].toString()) ?? 0.0,
+              double.tryParse(offer['latitude'].toString()) ?? 0.0,
+            ]),
+          );
+
+          shops.add(basicShop);
+        }
+      }
+
+      if (shops.isNotEmpty) {
+        ShopCacheService.cacheShops(shops);
+      }
+    } catch (e) {
+      print('Error extracting and caching shop data: $e');
+    }
+  }
+
+  /// Get offers filtered by current geofence
+  static Future<Map<String, dynamic>> getOffersInGeofence(
+      {required GeofenceService geofenceService,
+      String? city,
+      bool forceRefresh = false}) async {
+    try {
+      // Get all recommendations
+      final recommendationsResult = await getRecommendations(
+        city: city,
+        forceRefresh: forceRefresh,
+      );
+
+      if (recommendationsResult['success'] != true) {
+        return recommendationsResult;
+      }
+
+      List<dynamic> allOffers = recommendationsResult['recommendations'];
+
+      // If no geofence is set, return all offers
+      if (geofenceService.currentGeofence == null) {
+        return recommendationsResult;
+      }
+
+      // Fetch all shops - useful for bulk processing
+      final Map<String, Shop> shopCache = {};
+
+      // Pre-fetch all shops for better performance
+      try {
+        final shopsResponse = await http.get(
+            Uri.parse("https://closecart-backend.vercel.app/api/v1/shops/"));
+
+        if (shopsResponse.statusCode == 200) {
+          final shopsData = jsonDecode(shopsResponse.body);
+          if (shopsData['data'] != null && shopsData['data'] is List) {
+            for (var shopData in shopsData['data']) {
+              final shop = Shop.fromJson(shopData);
+              shopCache[shop.id] = shop;
+            }
+            print('Prefetched ${shopCache.length} shops');
+          }
+        }
+      } catch (e) {
+        print('Error prefetching shops: $e');
+        // Continue with individual fetches if bulk fetch fails
+      }
+
+      // Filter offers that are within the current geofence
+      List<dynamic> filteredOffers = [];
+
+      for (var offer in allOffers) {
+        if (!(offer is Map<String, dynamic>)) continue;
+
+        // Get the shop ID from the offer
+        String? shopId;
+        if (offer.containsKey('shop') && offer['shop'] != null) {
+          // Handle when shop is a string ID
+          if (offer['shop'] is String) {
+            shopId = offer['shop'];
+          }
+          // Handle when shop is an object with _id
+          else if (offer['shop'] is Map && offer['shop'].containsKey('_id')) {
+            shopId = offer['shop']['_id'];
+          }
+        }
+
+        if (shopId == null) continue;
+
+        // Try to get shop from cache or fetch individually
+        Shop? shop = shopCache[shopId];
+
+        // If not in cache, fetch the shop details
+        if (shop == null) {
+          try {
+            final shopResponse = await http.get(Uri.parse(
+                "https://closecart-backend.vercel.app/api/v1/shops/$shopId"));
+
+            if (shopResponse.statusCode == 200) {
+              final shopData = jsonDecode(shopResponse.body);
+              if (shopData['shop'] != null) {
+                shop = Shop.fromJson(shopData['shop']);
+                shopCache[shopId] = shop; // Add to cache
+              }
+            }
+          } catch (e) {
+            print('Error fetching shop details for $shopId: $e');
+            continue;
+          }
+        }
+
+        // Check if the shop's location is within the geofence
+        if (shop != null) {
+          final longitude = shop.location.longitude;
+          final latitude = shop.location.latitude;
+
+          // Check if the shop's location is valid
+          if (longitude != 0.0 || latitude != 0.0) {
+            if (geofenceService.isLocationInCurrentGeofence(
+                latitude, longitude)) {
+              // Add shop and location details to the offer for display
+              final offerWithLocation = Map<String, dynamic>.from(offer);
+              offerWithLocation['shopDetails'] = {
+                'name': shop.name,
+                'address': shop.address,
+                'longitude': longitude,
+                'latitude': latitude,
+                'isOpenNow': shop.isOpenNow,
+                'openingStatus': shop.openingStatusText
+              };
+
+              filteredOffers.add(offerWithLocation);
+            }
+          }
+        }
+      }
+
+      return {
+        'success': true,
+        'recommendations': filteredOffers,
+        'fromCache': recommendationsResult['fromCache'] ?? false,
+        'filtered': true,
+        'shopsFound': shopCache.length,
+      };
+    } catch (e) {
+      print('Error filtering offers by geofence: $e');
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
   }
 }

@@ -6,6 +6,7 @@ import 'package:closecart/Screens/editProfile.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:closecart/Util/theme.dart';
+import 'package:closecart/services/geofence_service.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:closecart/services/cache_service.dart';
@@ -25,7 +26,16 @@ void main() async {
   // Clean expired cache on app start
   await CacheService.cleanExpiredCache();
 
-  runApp(MainApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<GeofenceService>(
+          create: (_) => GeofenceService(),
+        ),
+      ],
+      child: MainApp(),
+    ),
+  );
 }
 
 class ThemeProvider with ChangeNotifier {

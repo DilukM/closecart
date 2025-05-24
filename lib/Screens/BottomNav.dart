@@ -1,6 +1,8 @@
 import 'package:closecart/Screens/Favourite.dart';
+import 'package:closecart/Screens/NotificationPage.dart';
 import 'package:closecart/Screens/Search.dart';
 import 'package:closecart/Screens/Settings.dart';
+import 'package:closecart/Screens/geofence_offers_screen.dart';
 import 'package:closecart/Screens/home.dart';
 import 'package:closecart/Util/colors.dart';
 import 'package:closecart/Widgets/sidebar.dart';
@@ -24,11 +26,12 @@ class _BottomNavState extends State<BottomNav> {
   String locationName = 'Fetching location...';
   bool isLoadingLocation = true;
 
-  static List<Widget> _pages = <Widget>[
-    Home(),
-    FavouritePage(),
-    SearchPage(),
-    SettingsPage(),
+  static final List<Widget> _pages = <Widget>[
+    const Home(),
+    const GeofenceOffersScreen(),
+    const FavouritePage(),
+    const SearchPage(),
+    const SettingsPage(),
   ];
 
   @override
@@ -36,7 +39,7 @@ class _BottomNavState extends State<BottomNav> {
     super.initState();
     _selectedIndex = widget.initialIndex;
     // Delay location fetch slightly to avoid issues during app startup
-    Future.delayed(Duration(milliseconds: 300), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _fetchUserLocation();
     });
   }
@@ -75,7 +78,7 @@ class _BottomNavState extends State<BottomNav> {
 
       // Optional: Add a retry mechanism after a delay
 
-      Future.delayed(Duration(seconds: 5), () {
+      Future.delayed(const Duration(seconds: 5), () {
         if (mounted && locationName == 'Location unavailable') {
           _fetchUserLocation();
         }
@@ -115,7 +118,7 @@ class _BottomNavState extends State<BottomNav> {
         ),
         leading: Builder(
           builder: (context) => IconButton(
-            icon: Icon(Icons.menu),
+            icon: const Icon(Icons.menu),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
@@ -131,7 +134,12 @@ class _BottomNavState extends State<BottomNav> {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 onPressed: () {
-                  // Handle notification button press
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationPage(),
+                    ),
+                  );
                 },
               ),
             ),
@@ -139,7 +147,7 @@ class _BottomNavState extends State<BottomNav> {
         ],
       ),
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: AppColors.primaryLight))),
         child: BottomNavigationBar(
           items: const <BottomNavigationBarItem>[
@@ -149,6 +157,13 @@ class _BottomNavState extends State<BottomNav> {
                 size: 20,
               ),
               label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(
+                Icons.location_pin,
+                size: 20,
+              ),
+              label: 'Geofence',
             ),
             BottomNavigationBarItem(
               icon: Icon(
@@ -175,7 +190,7 @@ class _BottomNavState extends State<BottomNav> {
           currentIndex: _selectedIndex,
           selectedItemColor: AppColors.primaryLight,
           unselectedItemColor: Theme.of(context).unselectedWidgetColor,
-          selectedLabelStyle: TextStyle(fontWeight: FontWeight.bold),
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
           type: BottomNavigationBarType.fixed,
           showUnselectedLabels: true,
           onTap: _onItemTapped,

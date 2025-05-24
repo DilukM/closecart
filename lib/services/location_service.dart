@@ -125,4 +125,37 @@ class LocationService {
       throw Exception('Failed to get location: $e');
     }
   }
+
+  /// Calculate distance between two points in meters
+  static double calculateDistance(
+    double startLatitude,
+    double startLongitude,
+    double endLatitude,
+    double endLongitude,
+  ) {
+    return Geolocator.distanceBetween(
+      startLatitude,
+      startLongitude,
+      endLatitude,
+      endLongitude,
+    );
+  }
+
+  /// Check if a location is within the specified geofence radius
+  static bool isLocationInGeofence({
+    required double centerLatitude,
+    required double centerLongitude,
+    required double pointLatitude,
+    required double pointLongitude,
+    required double radiusInMeters,
+  }) {
+    double distance = calculateDistance(
+      centerLatitude,
+      centerLongitude,
+      pointLatitude,
+      pointLongitude,
+    );
+
+    return distance <= radiusInMeters;
+  }
 }

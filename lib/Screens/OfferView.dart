@@ -1,3 +1,5 @@
+import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/services/shop_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:closecart/services/favoriteOfferService.dart';
@@ -63,8 +65,59 @@ class _OfferViewState extends State<OfferView> {
     }
   }
 
+  Shop? getShopDetails() {
+    // First try to get shop details from the cache if we have a shop ID
+    if (widget.offer.shopId != null) {
+      String? shopId;
+      if (widget.offer.shopId is String) {
+        shopId = widget.offer.shopId;
+      } else if (widget.offer.shop is Map &&
+          widget.offer.shop!['_id'] != null) {
+        shopId = widget.offer.shop!['_id'];
+      }
+
+      if (shopId != null && shopId.isNotEmpty) {
+        final Shop? cachedShop = ShopCacheService.getShopById(shopId);
+        if (cachedShop != null) {
+          return cachedShop;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// Get shop name with fallback
+  String getShopName() {
+    final Shop? shop = getShopDetails();
+
+    if (shop != null) {
+      return shop.name;
+    }
+
+    // If we have shop data in the offer
+    if (widget.offer.shop != null) {
+      if (widget.offer.shop is String) {
+        return ShopCacheService.getShopNameById(widget.offer.shop as String,
+            fallback: 'Unknown Shop');
+      } else if (widget.offer.shop is Map &&
+          widget.offer.shop!['name'] != null) {
+        return widget.offer.shop!['name'].toString();
+      }
+    }
+
+    return 'Unknown Shop';
+  }
+
+  /// Check if shop is open now
+  bool isShopOpen() {
+    final shop = getShopDetails();
+    return shop?.isOpenNow ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final shop = getShopDetails();
     // Use the properties from our Offer model directly
     return Scaffold(
       body: CustomScrollView(
@@ -184,8 +237,8 @@ class _OfferViewState extends State<OfferView> {
                             backgroundColor:
                                 Theme.of(context).colorScheme.primary,
                             child: Text(
-                              widget.offer.shop!['name'].isNotEmpty
-                                  ? widget.offer.shop!['name'][0].toUpperCase()
+                              shop!.name.isNotEmpty
+                                  ? shop.name[0].toUpperCase()
                                   : "?",
                               style: TextStyle(
                                   color:
@@ -198,7 +251,7 @@ class _OfferViewState extends State<OfferView> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  widget.offer.shop!['name'],
+                                  shop.name,
                                   style:
                                       Theme.of(context).textTheme.titleMedium,
                                 ),
