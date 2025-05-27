@@ -221,21 +221,9 @@ class RecommendationService {
       // Fetch all shops - useful for bulk processing
       final Map<String, Shop> shopCache = {};
 
-      // Pre-fetch all shops for better performance
+      // Pre-fetch all shops for better performance using the ShopCacheService
       try {
-        final shopsResponse = await http.get(
-            Uri.parse("https://closecart-backend.vercel.app/api/v1/shops/"));
-
-        if (shopsResponse.statusCode == 200) {
-          final shopsData = jsonDecode(shopsResponse.body);
-          if (shopsData['data'] != null && shopsData['data'] is List) {
-            for (var shopData in shopsData['data']) {
-              final shop = Shop.fromJson(shopData);
-              shopCache[shop.id] = shop;
-            }
-            print('Prefetched ${shopCache.length} shops');
-          }
-        }
+        shopCache.addAll(await ShopCacheService.prefetchAllShops());
       } catch (e) {
         print('Error prefetching shops: $e');
         // Continue with individual fetches if bulk fetch fails
@@ -265,22 +253,13 @@ class RecommendationService {
         // Try to get shop from cache or fetch individually
         Shop? shop = shopCache[shopId];
 
-        // If not in cache, fetch the shop details
+        // If not in cache, fetch the shop details using ShopCacheService
         if (shop == null) {
-          try {
-            final shopResponse = await http.get(Uri.parse(
-                "https://closecart-backend.vercel.app/api/v1/shops/$shopId"));
-
-            if (shopResponse.statusCode == 200) {
-              final shopData = jsonDecode(shopResponse.body);
-              if (shopData['shop'] != null) {
-                shop = Shop.fromJson(shopData['shop']);
-                shopCache[shopId] = shop; // Add to cache
-              }
-            }
-          } catch (e) {
-            print('Error fetching shop details for $shopId: $e');
-            continue;
+          shop = await ShopCacheService.fetchShopById(shopId);
+          if (shop != null) {
+            shopCache[shopId] = shop;
+          } else {
+            continue; // Skip this offer if we can't get the shop details
           }
         }
 

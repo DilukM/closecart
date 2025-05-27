@@ -6,7 +6,7 @@ import 'package:closecart/services/shop_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
-class OfferCard extends StatelessWidget {
+class OfferCard extends StatefulWidget {
   final Offer offer;
 
   const OfferCard({
@@ -14,22 +14,74 @@ class OfferCard extends StatelessWidget {
     required this.offer,
   }) : super(key: key);
 
-  /// Get shop details from cache service or from the offer
-  Shop? getShopDetails() {
-    // First try to get shop details from the cache if we have a shop ID
-    if (offer.shopId != null) {
+  @override
+  State<OfferCard> createState() => _OfferCardState();
+}
+
+class _OfferCardState extends State<OfferCard> {
+  Shop? _shopDetails;
+  bool _isLoadingShop = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShopDetails();
+  }
+
+  Future<void> _loadShopDetails() async {
+    if (widget.offer.shopId != null) {
       String? shopId;
-      if (offer.shopId is String) {
-        shopId = offer.shopId;
-      } else if (offer.shop is Map && offer.shop!['_id'] != null) {
-        shopId = offer.shop!['_id'];
+      if (widget.offer.shopId is String) {
+        shopId = widget.offer.shopId;
+      } else if (widget.offer.shop is Map &&
+          widget.offer.shop!['_id'] != null) {
+        shopId = widget.offer.shop!['_id'];
       }
 
       if (shopId != null && shopId.isNotEmpty) {
-        final Shop? cachedShop = ShopCacheService.getShopById(shopId);
-        if (cachedShop != null) {
-          return cachedShop;
+        setState(() {
+          _isLoadingShop = true;
+        });
+
+        try {
+          final Shop? shop = await ShopCacheService.fetchShopById(shopId);
+          if (mounted) {
+            setState(() {
+              _shopDetails = shop;
+              _isLoadingShop = false;
+            });
+          }
+        } catch (e) {
+          print('Error loading shop details: $e');
+          if (mounted) {
+            setState(() {
+              _isLoadingShop = false;
+            });
+          }
         }
+      }
+    }
+  }
+
+  /// Get shop details from cache or state
+  Shop? getShopDetails() {
+    // Return the shop if already loaded
+    if (_shopDetails != null) {
+      return _shopDetails;
+    }
+
+    // Try synchronous cache lookup as fallback
+    if (widget.offer.shopId != null) {
+      String? shopId;
+      if (widget.offer.shopId is String) {
+        shopId = widget.offer.shopId;
+      } else if (widget.offer.shop is Map &&
+          widget.offer.shop!['_id'] != null) {
+        shopId = widget.offer.shop!['_id'];
+      }
+
+      if (shopId != null && shopId.isNotEmpty) {
+        return ShopCacheService.getShopById(shopId);
       }
     }
 
@@ -39,22 +91,23 @@ class OfferCard extends StatelessWidget {
   /// Get shop name with fallback
   String getShopName() {
     final Shop? shop = getShopDetails();
-
+    print('Shop details: $shop');
     if (shop != null) {
       return shop.name;
     }
 
     // If we have shop data in the offer
-    if (offer.shop != null) {
-      if (offer.shop is String) {
-        return ShopCacheService.getShopNameById(offer.shop as String,
+    if (widget.offer.shop != null) {
+      if (widget.offer.shop is String) {
+        return ShopCacheService.getShopNameById(widget.offer.shop as String,
             fallback: 'Unknown Shop');
-      } else if (offer.shop is Map && offer.shop!['name'] != null) {
-        return offer.shop!['name'].toString();
+      } else if (widget.offer.shop is Map &&
+          widget.offer.shop!['name'] != null) {
+        return widget.offer.shop!['name'].toString();
       }
     }
 
-    return 'Unknown Shop';
+    return 'Unknown Shop name 2';
   }
 
   /// Check if shop is open now
@@ -65,7 +118,6 @@ class OfferCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print("Recieved Offer: ${offer}");
     // Get shop information
     final shopName = getShopName();
     final shop = getShopDetails();
@@ -76,7 +128,7 @@ class OfferCard extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => OfferView(offer: offer),
+            builder: (context) => OfferView(offer: widget.offer),
           ),
         );
       },
@@ -95,7 +147,7 @@ class OfferCard extends StatelessWidget {
                 AspectRatio(
                   aspectRatio: 1.5,
                   child: CachedNetworkImage(
-                    imageUrl: offer.imageUrl,
+                    imageUrl: widget.offer.imageUrl,
                     placeholder: (context, url) => Shimmer.fromColors(
                       baseColor: Theme.of(context).colorScheme.surface,
                       highlightColor: Theme.of(context)
@@ -111,7 +163,7 @@ class OfferCard extends StatelessWidget {
                   ),
                 ),
                 // Discount badge if applicable
-                if (offer.discount > 0)
+                if (widget.offer.discount > 0)
                   Positioned(
                     top: 8,
                     right: 8,
@@ -122,7 +174,7 @@ class OfferCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${offer.discount}% OFF',
+                        '${widget.offer.discount}% OFF',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -162,7 +214,7 @@ class OfferCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    offer.title,
+                    widget.offer.title,
                     style: Theme.of(context).textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -172,19 +224,33 @@ class OfferCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text(
-                          shopName,
-                          style: Theme.of(context).textTheme.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: _isLoadingShop
+                            ? Shimmer.fromColors(
+                                baseColor:
+                                    Theme.of(context).colorScheme.surface,
+                                highlightColor: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withOpacity(0.3),
+                                child: Container(
+                                  height: 14,
+                                  width: 100,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                shopName,
+                                style: Theme.of(context).textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                       Row(
                         children: [
                           Icon(Icons.star, color: Colors.amber, size: 14),
                           SizedBox(width: 2),
                           Text(
-                            offer.rating.toString(),
+                            widget.offer.rating.toString(),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],

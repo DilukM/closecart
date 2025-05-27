@@ -22,11 +22,13 @@ class OfferView extends StatefulWidget {
 class _OfferViewState extends State<OfferView> {
   bool _isFavorite = false;
   bool _isLoading = false;
+  Shop? _shopDetails; // Add a state variable to store shop details
 
   @override
   void initState() {
     super.initState();
     _checkFavoriteStatus();
+    _loadShopDetails(); // Call method to load shop details
   }
 
   void _checkFavoriteStatus() {
@@ -65,8 +67,8 @@ class _OfferViewState extends State<OfferView> {
     }
   }
 
-  Shop? getShopDetails() {
-    // First try to get shop details from the cache if we have a shop ID
+  // Add a method to load shop details asynchronously
+  Future<void> _loadShopDetails() async {
     if (widget.offer.shopId != null) {
       String? shopId;
       if (widget.offer.shopId is String) {
@@ -77,19 +79,21 @@ class _OfferViewState extends State<OfferView> {
       }
 
       if (shopId != null && shopId.isNotEmpty) {
-        final Shop? cachedShop = ShopCacheService.getShopById(shopId);
-        if (cachedShop != null) {
-          return cachedShop;
+        print("Loading shop details in background");
+        final Shop? fetchedShop = await ShopCacheService.fetchShopById(shopId);
+        if (fetchedShop != null && mounted) {
+          setState(() {
+            _shopDetails = fetchedShop;
+          });
+          print("Found shop: ${fetchedShop.name}");
         }
       }
     }
-
-    return null;
   }
 
   /// Get shop name with fallback
   String getShopName() {
-    final Shop? shop = getShopDetails();
+    final Shop? shop = _shopDetails;
 
     if (shop != null) {
       return shop.name;
@@ -111,13 +115,13 @@ class _OfferViewState extends State<OfferView> {
 
   /// Check if shop is open now
   bool isShopOpen() {
-    final shop = getShopDetails();
+    final shop = _shopDetails;
     return shop?.isOpenNow ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final shop = getShopDetails();
+    final shop = _shopDetails;
     // Use the properties from our Offer model directly
     return Scaffold(
       body: CustomScrollView(
@@ -237,8 +241,8 @@ class _OfferViewState extends State<OfferView> {
                             backgroundColor:
                                 Theme.of(context).colorScheme.primary,
                             child: Text(
-                              shop!.name.isNotEmpty
-                                  ? shop.name[0].toUpperCase()
+                              getShopName().isNotEmpty
+                                  ? getShopName()[0].toUpperCase()
                                   : "?",
                               style: TextStyle(
                                   color:
@@ -251,7 +255,7 @@ class _OfferViewState extends State<OfferView> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  shop.name,
+                                  getShopName(),
                                   style:
                                       Theme.of(context).textTheme.titleMedium,
                                 ),

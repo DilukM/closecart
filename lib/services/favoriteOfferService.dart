@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import '../model/offerModel.dart'; // Add this import
 
 class FavoriteOfferService {
   static const String baseUrl =
@@ -210,7 +211,7 @@ class FavoriteOfferService {
   }
 
   /// Fetch all favorites with offer details, with support for background refresh
-  static Future<List<Map<String, dynamic>>> fetchFavoriteOffers(
+  static Future<List<Offer>> fetchFavoriteOffers(
       {bool backgroundRefresh = false}) async {
     try {
       var box = Hive.box('authBox');
@@ -233,89 +234,58 @@ class FavoriteOfferService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final responseData = jsonDecode(response.body);
 
-        // Extract favorite offers data
-        List<dynamic> rawOffersData;
-        if (data is List) {
-          rawOffersData = data;
-        } else if (data is Map) {
-          // Try different possible keys where the offers might be stored
-          if (data.containsKey('data')) {
-            rawOffersData = data['data'] is List ? data['data'] : [];
-          } else if (data.containsKey('favorites')) {
-            rawOffersData = data['favorites'] is List ? data['favorites'] : [];
-          } else if (data.containsKey('likedOffers')) {
-            rawOffersData =
-                data['likedOffers'] is List ? data['likedOffers'] : [];
-          } else {
-            rawOffersData = data.values
-                .firstWhere((value) => value is List, orElse: () => []);
-          }
-        } else {
-          rawOffersData = [];
-        }
+        // Extract offers from the response
+        if (responseData is Map && responseData.containsKey('data')) {
+          List<dynamic> offerData = responseData['data'];
+          List<String> favoriteIds = [];
 
-        // Process and format the offer data for display
-        List<Map<String, dynamic>> formattedOffers = [];
-        List<String> favoriteIds = [];
-
-        for (var offer in rawOffersData) {
-          if (offer is Map) {
-            // Extract ID
-            String offerId = '';
-            if (offer.containsKey('_id')) {
-              offerId = offer['_id'].toString();
-            } else if (offer.containsKey('id')) {
-              offerId = offer['id'].toString();
-            } else if (offer.containsKey('offerId')) {
-              offerId = offer['offerId'].toString();
-            }
-
+          // Convert each offer to Offer object
+          List<Offer> offers = offerData.map<Offer>((offerJson) {
+            String offerId = offerJson['_id']?.toString() ?? '';
             favoriteIds.add(offerId);
+            return Offer.fromJson(offerJson);
+          }).toList();
 
-            // Extract other fields
-            String title = offer['title']?.toString() ??
-                offer['name']?.toString() ??
-                'Favorite Offer';
+          // Update favorite IDs in cache
+          box.put('favorites', favoriteIds);
 
-            String imageUrl = offer['imageUrl']?.toString() ??
-                offer['image']?.toString() ??
-                'https://www.foodiesfeed.com/wp-content/uploads/2023/06/burger-with-melted-cheese.jpg';
+          // Cache the raw data for future use
+          box.put('favoriteOffers', jsonEncode(offerData));
 
-            double rating =
-                double.tryParse(offer['rating']?.toString() ?? '0') ?? 0.0;
-
-            formattedOffers.add({
-              '_id': offerId,
-              'title': title,
-              'imageUrl': imageUrl,
-              'rating': rating,
-            });
-          } else if (offer is String) {
-            favoriteIds.add(offer);
-            formattedOffers.add({
-              '_id': offer,
-              'title': 'Favorite Offer',
-              'imageUrl':
-                  'https://www.foodiesfeed.com/wp-content/uploads/2023/06/burger-with-melted-cheese.jpg',
-              'rating': 4.0,
-            });
-          }
+          return offers;
         }
 
-        // Update both caches
-        box.put('favorites', favoriteIds);
-        box.put('favoriteOffers', jsonEncode(formattedOffers));
-
-        return formattedOffers;
+        // Return empty list if data structure is unexpected
+        return [];
       } else {
         // Return cached data on error
-        return getCachedFavoriteOffers();
+        return _getCachedFavoriteOffers();
       }
     } catch (error) {
       print('Error fetching favorite offers: $error');
-      return getCachedFavoriteOffers();
+      return _getCachedFavoriteOffers();
+    }
+  }
+
+  /// Get cached favorites immediately as Offer objects
+  static List<Offer> _getCachedFavoriteOffers() {
+    try {
+      var box = Hive.box('authBox');
+
+      // Try to get cached favorite offers first
+      final cachedOffers = box.get('favoriteOffers');
+      if (cachedOffers != null) {
+        List<dynamic> offersJson = jsonDecode(cachedOffers);
+        return offersJson.map<Offer>((json) => Offer.fromJson(json)).toList();
+      }
+
+      // If no cached offers data, return empty list
+      return [];
+    } catch (e) {
+      print('Error getting cached favorites: $e');
+      return [];
     }
   }
 }

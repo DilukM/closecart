@@ -58,9 +58,7 @@ class _FavouritePageState extends State<FavouritePage> {
           backgroundRefresh: backgroundRefresh);
 
       // Convert the map data to Offer objects
-      List<Offer> offers = favoriteOffersData
-          .map((offerJson) => Offer.fromJson(offerJson))
-          .toList();
+      List<Offer> offers = favoriteOffersData;
 
       setState(() {
         _favoriteOffers = offers;
