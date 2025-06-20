@@ -1,6 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:closecart/Screens/OfferView.dart';
-import 'package:closecart/model/offerModel.dart';
+import 'package:closecart/models/offer_model.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -48,11 +48,8 @@ class OfferTile extends StatelessWidget {
                         imageUrl: offer.imageUrl ?? '',
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Shimmer.fromColors(
-                          baseColor: Theme.of(context).colorScheme.surface,
-                          highlightColor: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withOpacity(0.3),
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
                           child: Container(
                             color: Theme.of(context).colorScheme.surface,
                           ),

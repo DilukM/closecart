@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
 import 'package:closecart/services/favoriteShopService.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:toastification/toastification.dart';
 
 class ShopView extends StatefulWidget {
   final String shopId;
@@ -52,7 +53,7 @@ class _ShopViewState extends State<ShopView>
   }
 
   Future<void> _toggleFavorite() async {
-    if (_isLikeLoading) return;
+    if (_isLikeLoading || !mounted) return;
 
     setState(() {
       _isLikeLoading = true;
@@ -61,27 +62,37 @@ class _ShopViewState extends State<ShopView>
     try {
       final result = await FavoriteShopService.toggleFavorite(widget.shopId);
 
-      if (result['success']) {
-        setState(() {
-          _isFavorite = result['isFavorite'];
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(result['message']), duration: Duration(seconds: 1)),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'])),
-        );
+      if (mounted) {
+        if (result['success']) {
+          setState(() {
+            _isFavorite = result['isFavorite'];
+          });
+          toastification.show(
+            context: context,
+            title: Text(result['message']),
+            autoCloseDuration: const Duration(seconds: 2),
+            type: ToastificationType.success,
+          );
+        } else {
+          toastification.show(
+            context: context,
+            title: Text(result['message']),
+            type: ToastificationType.error,
+          );
+        }
       }
     } finally {
-      setState(() {
-        _isLikeLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLikeLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _fetchShopDetails() async {
+    if (!mounted) return;
+
     try {
       setState(() {
         _isLoading = true;
@@ -92,6 +103,8 @@ class _ShopViewState extends State<ShopView>
       final url = Uri.parse(
           'https://closecart-backend.vercel.app/api/v1/shops/${widget.shopId}');
       final response = await http.get(url);
+
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -117,26 +130,27 @@ class _ShopViewState extends State<ShopView>
         });
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
-
-  
 
   Future<void> _launchMap() async {
     if (_shop == null) return;
 
     final url =
         'https://www.google.com/maps/search/?api=1&query=${_shop!.location.latitude},${_shop!.location.longitude}';
-
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open map')),
+      toastification.show(
+        context: context,
+        title: Text('Could not open map'),
+        type: ToastificationType.error,
       );
     }
   }
@@ -145,8 +159,10 @@ class _ShopViewState extends State<ShopView>
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open link: $url')),
+      toastification.show(
+        context: context,
+        title: Text('Could not open link: $url'),
+        type: ToastificationType.error,
       );
     }
   }
@@ -158,9 +174,8 @@ class _ShopViewState extends State<ShopView>
         children: [
           // Shimmer for cover image
           Shimmer.fromColors(
-            baseColor: Theme.of(context).colorScheme.surface,
-            highlightColor:
-                Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
             child: Container(
               width: double.infinity,
               height: 200,
@@ -175,9 +190,8 @@ class _ShopViewState extends State<ShopView>
               children: [
                 // Shimmer for shop stats card
                 Shimmer.fromColors(
-                  baseColor: Theme.of(context).colorScheme.surface,
-                  highlightColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
                   child: Container(
                     margin: EdgeInsets.only(bottom: 16),
                     padding: EdgeInsets.all(12),
@@ -192,9 +206,8 @@ class _ShopViewState extends State<ShopView>
 
                 // Shimmer for shop header with logo
                 Shimmer.fromColors(
-                  baseColor: Theme.of(context).colorScheme.surface,
-                  highlightColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -233,9 +246,8 @@ class _ShopViewState extends State<ShopView>
 
                 // Shimmer for description
                 Shimmer.fromColors(
-                  baseColor: Theme.of(context).colorScheme.surface,
-                  highlightColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -270,9 +282,8 @@ class _ShopViewState extends State<ShopView>
 
                 // Shimmer for address card
                 Shimmer.fromColors(
-                  baseColor: Theme.of(context).colorScheme.surface,
-                  highlightColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
                   child: Container(
                     width: double.infinity,
                     height: 100,
@@ -287,9 +298,8 @@ class _ShopViewState extends State<ShopView>
 
                 // Shimmer for business hours card
                 Shimmer.fromColors(
-                  baseColor: Theme.of(context).colorScheme.surface,
-                  highlightColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
                   child: Container(
                     width: double.infinity,
                     height: 200,
@@ -363,8 +373,10 @@ class _ShopViewState extends State<ShopView>
               IconButton(
                 icon: Icon(Icons.share, color: Colors.white),
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Share functionality coming soon!')),
+                  toastification.show(
+                    context: context,
+                    title: Text('Share functionality coming soon!'),
+                    type: ToastificationType.info,
                   );
                 },
               ),

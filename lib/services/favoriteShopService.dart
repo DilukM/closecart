@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
+import 'package:closecart/services/location_service.dart';
 
 class FavoriteShopService {
   static const String _apiBaseUrl =
@@ -18,7 +22,7 @@ class FavoriteShopService {
   // Get headers with authorization
   static Map<String, String> _getAuthHeaders() {
     final token = _getToken();
-    print("token: $token");
+
 
     return {
       'Content-Type': 'application/json',
@@ -42,6 +46,41 @@ class FavoriteShopService {
       return userId;
     }
     return null;
+  }
+
+  // Get device info
+  static Future<String> _getDeviceInfo() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+
+    try {
+      if (Platform.isAndroid) {
+        final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+        return '${androidInfo.brand} ${androidInfo.model}';
+      } else if (Platform.isIOS) {
+        final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+        return '${iosInfo.name} ${iosInfo.model}';
+      }
+    } catch (e) {
+      print('Error getting device info: $e');
+    }
+
+    return 'Unknown Device';
+  }
+
+  // Get platform
+  static String _getPlatform() {
+    if (Platform.isAndroid) {
+      return 'Android';
+    } else if (Platform.isIOS) {
+      return 'iOS';
+    } else if (Platform.isWindows) {
+      return 'Windows';
+    } else if (Platform.isMacOS) {
+      return 'macOS';
+    } else if (Platform.isLinux) {
+      return 'Linux';
+    }
+    return 'Unknown';
   }
 
   // Check if a shop is already in favorites
@@ -68,6 +107,98 @@ class FavoriteShopService {
     return List<Map<String, dynamic>>.from(
         cachedShops.map((shop) => shop as Map<String, dynamic>));
   }
+
+  /// Add shop click
+  static Future<Map<String, dynamic>> addShopClick(String shopId) async {
+    try {
+      var box = Hive.box('authBox');
+      var jwt = box.get('jwtToken');
+
+      if (jwt == null) {
+        return {
+          'success': false,
+          'message': 'User not authenticated',
+        };
+      }
+
+      // Get user ID from JWT
+      final jwtToken = JWT.decode(jwt);
+      final userId = jwtToken.payload['id'];
+
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
+
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
+      }
+
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
+
+      final uri = Uri.parse('$_apiBaseUrl/interactions/');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: json.encode({
+          'userId': userId,
+          'interactionType': "SHOP_CLICK",
+          'targetType': "SHOP",
+          'targetId': shopId,
+          'action': "ADD",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+     
+
+      if (response.statusCode == 200 && responseData['success']) {
+        // Update local cache
+        var shopClicks = box.get('shopClicks') ?? [];
+        if (!shopClicks.contains(shopId)) {
+          shopClicks.add(shopId);
+          box.put('shopClicks', shopClicks);
+        }
+
+        return {
+          'success': true,
+          'message': 'Shop click added',
+         
+        };
+      } else {
+        return {
+          'success': false,
+          'message':
+              responseData['message'] ?? 'Failed to add clicked shop',
+          
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error: $e',
+        
+      };
+    }
+  }
+
 
   // Fetch favorite shops from API
   static Future<List<Shop>> fetchFavoriteShops(
@@ -129,18 +260,45 @@ class FavoriteShopService {
     }
 
     try {
-      final uri = Uri.parse('$_apiBaseUrl/consumer/liked-shops');
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
+
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
+      }
+
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
+
+      final uri = Uri.parse('$_apiBaseUrl/interactions/');
       final response = await http.post(
         uri,
         headers: _getAuthHeaders(),
         body: json.encode({
           'userId': userId,
-          'shopId': shopId,
+          'interactionType': "SHOP_LIKE",
+          'targetType': "SHOP",
+          'targetId': shopId,
+          'action': "ADD",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
         }),
       );
 
       final responseData = json.decode(response.body);
-      print("responseData: $responseData");
       if (response.statusCode == 200 && responseData['success']) {
         // Update cache
         await fetchFavoriteShops(backgroundRefresh: true);
@@ -178,26 +336,45 @@ class FavoriteShopService {
     }
 
     try {
-      final uri = Uri.parse('$_apiBaseUrl/consumer/liked-shops');
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
 
-      // For DELETE with body, we need to use a special method
-      final request = http.Request('DELETE', uri);
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
+      }
 
-      // Add authorization headers
-      final headers = _getAuthHeaders();
-      headers.forEach((key, value) {
-        request.headers[key] = value;
-      });
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
 
-      request.body = json.encode({
-        'userId': userId,
-        'shopId': shopId,
-      });
+      final uri = Uri.parse('$_apiBaseUrl/interactions/');
+      final response = await http.post(
+        uri,
+        headers: _getAuthHeaders(),
+        body: json.encode({
+          'userId': userId,
+          'interactionType': "SHOP_LIKE",
+          'targetType': "SHOP",
+          'targetId': shopId,
+          'action': "REMOVE",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
+        }),
+      );
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
       final responseData = json.decode(response.body);
-
       if (response.statusCode == 200 && responseData['success']) {
         // Update cache
         await fetchFavoriteShops(backgroundRefresh: true);

@@ -1,5 +1,5 @@
 import 'package:closecart/Screens/Favourite.dart';
-import 'package:closecart/Screens/NotificationPage.dart';
+import 'package:closecart/Screens/notification_page.dart';
 import 'package:closecart/Screens/Search.dart';
 import 'package:closecart/Screens/Settings.dart';
 import 'package:closecart/Screens/geofence_offers_screen.dart';
@@ -9,7 +9,11 @@ import 'package:closecart/Widgets/sidebar.dart';
 import 'package:closecart/main.dart';
 import 'package:closecart/services/location_service.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+
+// Global key that can be accessed from anywhere in the app
+final GlobalKey<_BottomNavState> bottomNavKey = GlobalKey<_BottomNavState>();
 
 class BottomNav extends StatefulWidget {
   final int initialIndex;
@@ -25,6 +29,7 @@ class _BottomNavState extends State<BottomNav> {
   late int _selectedIndex;
   String locationName = 'Fetching location...';
   bool isLoadingLocation = true;
+  String? profileImageUrl;
 
   static final List<Widget> _pages = <Widget>[
     const Home(),
@@ -34,9 +39,17 @@ class _BottomNavState extends State<BottomNav> {
     const SettingsPage(),
   ];
 
+  // Method to change the selected index from outside
+  void changeTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _getProfile();
     _selectedIndex = widget.initialIndex;
     // Delay location fetch slightly to avoid issues during app startup
     Future.delayed(const Duration(milliseconds: 300), () {
@@ -48,6 +61,13 @@ class _BottomNavState extends State<BottomNav> {
   void dispose() {
     // Ensure we're properly cleaning up any location resources
     super.dispose();
+  }
+
+  Future<void> _getProfile() async {
+    var box = Hive.box('authBox');
+    var profile = box.get('profileData');
+    profileImageUrl = profile['imageUrl'] ??
+        'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQvj3m7aqQbQp6jX0EGDRWLGNok8H47-XZnfQ&s';
   }
 
   Future<void> _fetchUserLocation() async {
@@ -117,10 +137,22 @@ class _BottomNavState extends State<BottomNav> {
           ],
         ),
         leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
+          builder: (context) => Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: InkWell(
+              onTap: () => setState(() {
+                _selectedIndex = 4;
+              }),
+              child: CircleAvatar(
+                child: Image.network(profileImageUrl!),
+              ),
+            ),
           ),
+          // builder: (context) => IconButton(
+          //   icon: const Icon(Icons.menu),
+
+          //   onPressed: () => Scaffold.of(context).openDrawer(),
+          // ),
         ),
         actions: [
           Padding(

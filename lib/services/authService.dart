@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:closecart/models/user_model.dart';
 
 class AuthService {
   final String baseUrl =
@@ -62,7 +63,7 @@ class AuthService {
     return response;
   }
 
-  Future<Map<String, dynamic>> fetchProfileData() async {
+  Future<UserModel> fetchProfileData() async {
     var box = Hive.box('authBox');
     var jwt = box.get('jwtToken');
     final jwtToken = JWT.decode(jwt);
@@ -72,11 +73,66 @@ class AuthService {
 
     if (response.statusCode == 200) {
       final responseBody = jsonDecode(response.body);
-      box.put('profileData', responseBody['data']);
+      print('Profile data fetched successfully: $responseBody');
 
-      return responseBody;
+      final userData = responseBody['data'];
+      final userModel = UserModel.fromJson(userData);
+
+      // Store both raw data and user model
+      box.put('profileData', userData);
+      box.put('userModel', userModel.toMap());
+
+      return userModel;
     } else {
       throw Exception('Failed to load profile data');
+    }
+  }
+
+  // Get the current user from local storage
+  UserModel? getCurrentUser() {
+    var box = Hive.box('authBox');
+    final userData = box.get('userModel');
+
+    if (userData != null) {
+      return UserModel.fromMap(Map<String, dynamic>.from(userData));
+    }
+    return null;
+  }
+
+  // Update user profile with specified fields
+  Future<UserModel> updateProfile(Map<String, dynamic> updateData) async {
+    var box = Hive.box('authBox');
+    var jwt = box.get('jwtToken');
+
+    if (jwt == null) {
+      throw Exception('Not authenticated');
+    }
+
+    final jwtToken = JWT.decode(jwt);
+    final userId = jwtToken.payload['id'];
+    final url = Uri.parse('${baseUrl}$userId');
+
+    final response = await http.put(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $jwt',
+      },
+      body: jsonEncode(updateData),
+    );
+
+    if (response.statusCode == 200) {
+      final responseBody = jsonDecode(response.body);
+      final updatedUserData = responseBody['data'];
+      final updatedUser = UserModel.fromJson(updatedUserData);
+
+      // Update local storage
+      box.put('profileData', updatedUserData);
+      box.put('userModel', updatedUser.toMap());
+
+      return updatedUser;
+    } else {
+      throw Exception('Failed to update profile: ${response.statusCode}');
     }
   }
 }

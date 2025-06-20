@@ -1,11 +1,12 @@
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
 import 'package:closecart/services/shop_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:closecart/services/favoriteOfferService.dart';
 import 'package:intl/intl.dart';
-import 'package:closecart/model/offerModel.dart';
+import 'package:closecart/models/offer_model.dart';
 import 'package:closecart/Screens/shopView.dart'; // Import the ShopView
+import 'package:toastification/toastification.dart';
 
 class OfferView extends StatefulWidget {
   final Offer offer;
@@ -23,12 +24,12 @@ class _OfferViewState extends State<OfferView> {
   bool _isFavorite = false;
   bool _isLoading = false;
   Shop? _shopDetails; // Add a state variable to store shop details
-
   @override
   void initState() {
     super.initState();
     _checkFavoriteStatus();
     _loadShopDetails(); // Call method to load shop details
+    _trackOfferView(); // Track offer view when page loads
   }
 
   void _checkFavoriteStatus() {
@@ -38,7 +39,7 @@ class _OfferViewState extends State<OfferView> {
   }
 
   Future<void> _toggleFavorite() async {
-    if (_isLoading) return;
+    if (_isLoading || !mounted) return;
 
     setState(() {
       _isLoading = true;
@@ -47,23 +48,55 @@ class _OfferViewState extends State<OfferView> {
     try {
       final result = await FavoriteOfferService.toggleFavorite(widget.offer.id);
 
-      if (result['success']) {
-        setState(() {
-          _isFavorite = result['isFavorite'];
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(result['message']), duration: Duration(seconds: 1)),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'])),
-        );
+      if (mounted) {
+        if (result['success']) {
+          setState(() {
+            _isFavorite = result['isFavorite'];
+          });
+          toastification.show(
+            context: context,
+            title: Text(result['message']),
+            autoCloseDuration: const Duration(seconds: 2),
+            type: ToastificationType.success,
+          );
+        } else {
+          toastification.show(
+            context: context,
+            title: Text(result['message']),
+            type: ToastificationType.error,
+          );
+        }
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Track offer view with cooldown mechanism
+  Future<void> _trackOfferView() async {
+    try {
+      // Check if the offer can be clicked (6-hour cooldown)
+      if (!FavoriteOfferService.canClickOffer(widget.offer.id)) {
+        print('Offer view tracking on cooldown for offer: ${widget.offer.id}');
+        return;
+      }
+
+      print('Tracking offer view for offer: ${widget.offer.id}');
+      final result = await FavoriteOfferService.addOfferClick(widget.offer.id);
+
+      if (result['success']) {
+        print('Offer view tracked successfully');
+      } else if (result['onCooldown'] == true) {
+        print('Offer tracking on cooldown: ${result['message']}');
+      } else {
+        print('Failed to track offer view: ${result['message']}');
+      }
+    } catch (e) {
+      print('Error tracking offer view: $e');
     }
   }
 
@@ -140,22 +173,43 @@ class _OfferViewState extends State<OfferView> {
                 errorWidget: (context, url, error) => Icon(Icons.error),
               ),
             ),
-            actions: [
-              IconButton(
-                icon: Icon(
-                  _isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: _isFavorite ? Colors.red : null,
+            leading: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CircleAvatar(
+                backgroundColor:
+                    Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back_ios),
+                  onPressed: () => Navigator.pop(context),
                 ),
-                onPressed: _toggleFavorite,
               ),
-              IconButton(
-                icon: Icon(Icons.share),
-                onPressed: () {
-                  // Share functionality
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Share functionality coming soon!')),
-                  );
-                },
+            ),
+            actions: [
+              CircleAvatar(
+                backgroundColor:
+                    Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                child: IconButton(
+                  icon: Icon(
+                    _isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: _isFavorite ? Colors.red : null,
+                  ),
+                  onPressed: _toggleFavorite,
+                ),
+              ),
+              CircleAvatar(
+                backgroundColor:
+                    Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                child: IconButton(
+                  icon: Icon(Icons.share),
+                  onPressed: () {
+                    // Share functionality
+                    toastification.show(
+                      context: context,
+                      title: Text('Share functionality coming soon!'),
+                      type: ToastificationType.info,
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -188,7 +242,9 @@ class _OfferViewState extends State<OfferView> {
                             SizedBox(width: 4),
                             Text(
                               widget.offer.rating.toString(),
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black),
                             ),
                           ],
                         ),
@@ -244,9 +300,7 @@ class _OfferViewState extends State<OfferView> {
                               getShopName().isNotEmpty
                                   ? getShopName()[0].toUpperCase()
                                   : "?",
-                              style: TextStyle(
-                                  color:
-                                      Theme.of(context).colorScheme.onPrimary),
+                              style: TextStyle(color: Colors.black),
                             ),
                           ),
                           SizedBox(width: 12),
@@ -471,7 +525,7 @@ class _OfferViewState extends State<OfferView> {
                     ),
                   ),
 
-                  SizedBox(height: 16),
+                  SizedBox(height: 32),
 
                   // Description
                   Text(
@@ -484,7 +538,7 @@ class _OfferViewState extends State<OfferView> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
 
-                  SizedBox(height: 16),
+                  SizedBox(height: 32),
 
                   // Category
                   Text(
@@ -494,14 +548,13 @@ class _OfferViewState extends State<OfferView> {
                   SizedBox(height: 8),
                   Chip(
                     label: Text(widget.offer.category),
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
+                    backgroundColor: Colors.transparent,
                     labelStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
 
-                  SizedBox(height: 16),
+                  SizedBox(height: 32),
 
                   // Tags
                   if (widget.offer.tags.isNotEmpty) ...[
@@ -516,12 +569,9 @@ class _OfferViewState extends State<OfferView> {
                       children: widget.offer.tags.map<Widget>((tag) {
                         return Chip(
                           label: Text(tag),
-                          backgroundColor:
-                              Theme.of(context).colorScheme.secondaryContainer,
+                          backgroundColor: Colors.transparent,
                           labelStyle: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSecondaryContainer,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         );
                       }).toList(),
@@ -591,7 +641,7 @@ class _OfferViewState extends State<OfferView> {
                     ),
                   ),
 
-                  SizedBox(height: 24),
+                  SizedBox(height: 40),
 
                   // Action buttons
                   Row(
@@ -612,8 +662,16 @@ class _OfferViewState extends State<OfferView> {
                             disabledBackgroundColor:
                                 Theme.of(context).colorScheme.surfaceVariant,
                           ),
-                          icon: Icon(Icons.redeem),
-                          label: Text('Redeem Offer'),
+                          icon: Icon(
+                            Icons.redeem,
+                            color: Colors.black,
+                          ),
+                          label: Text(
+                            'Redeem Offer',
+                            style: TextStyle(
+                              color: Colors.black,
+                            ),
+                          ),
                         ),
                       ),
                       SizedBox(width: 12),

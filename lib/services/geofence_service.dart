@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:closecart/services/location_service.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
 
 class Geofence {
   final double latitude;

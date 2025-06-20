@@ -1,8 +1,23 @@
 import 'dart:convert';
+import 'package:app_settings/app_settings.dart';
 import 'package:http/http.dart' as http;
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:closecart/model/notificationModel.dart';
+import 'package:closecart/models/notification_model.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/material.dart';
+
+// Provider to track notification permissions
+class NotificationPermissionProvider with ChangeNotifier {
+  bool _permissionGranted = false;
+
+  bool get permissionGranted => _permissionGranted;
+
+  set permissionGranted(bool value) {
+    _permissionGranted = value;
+    notifyListeners();
+  }
+}
 
 class NotificationService {
   static const String _apiBaseUrl =
@@ -11,6 +26,231 @@ class NotificationService {
 
   // Flag to use mocked data during development
   static bool useMockedData = false;
+
+  // FlutterLocalNotificationsPlugin instance
+  static final FlutterLocalNotificationsPlugin notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  // Permission status storage key
+  static const String _permissionKey = 'notificationPermissionStatus';
+
+  // Initialize the notification plugin
+  static Future<void> initializeNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    final DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+      requestAlertPermission: false, // We'll request manually
+      requestBadgePermission: false, // We'll request manually
+      requestSoundPermission: false, // We'll request manually
+    );
+
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await notificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse:
+          (NotificationResponse notificationResponse) {
+        // Handle notification taps here
+        print('Notification clicked: ${notificationResponse.payload}');
+      },
+    );
+
+    // Request permissions after initialization
+    await requestNotificationPermissions();
+  }
+
+  // Request notification permissions explicitly
+  static Future<bool> requestNotificationPermissions() async {
+    // Always check current status first
+    final currentStatus = await checkCurrentPermissionStatus();
+
+    // If already granted, just return true
+    if (currentStatus) {
+      return true;
+    }
+
+    // Otherwise try to request permissions
+    try {
+      final granted = await _requestPermissions();
+
+      // Save the updated status
+      final box = Hive.box('authBox');
+      await box.put(_permissionKey, granted);
+
+      return granted;
+    } catch (e) {
+      print('Error requesting notification permissions: $e');
+      return false;
+    }
+  }
+
+  // Check the current actual permission status (not from cache)
+  static Future<bool> checkCurrentPermissionStatus() async {
+    try {
+      // On Android
+      final androidImplementation =
+          notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidImplementation != null) {
+        final areEnabled =
+            await androidImplementation.areNotificationsEnabled();
+        return areEnabled ?? false;
+      }
+
+      // On iOS
+      final iOSImplementation =
+          notificationsPlugin.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+
+      if (iOSImplementation != null) {
+        // For iOS, we don't have a direct way to check, so we'll request permissions
+        // which will tell us the current status
+        final isGranted = await iOSImplementation.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        return isGranted ?? false;
+      }
+
+      // Default case if platform-specific implementation not available
+      return false;
+    } catch (e) {
+      print('Error checking notification permission status: $e');
+      return false;
+    }
+  }
+
+  // Check if notifications are supported
+  static Future<bool> _areNotificationsSupported() async {
+    try {
+      return await notificationsPlugin
+              .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>()
+              ?.areNotificationsEnabled() ??
+          true; // Default to true for iOS or if check fails
+    } catch (e) {
+      print("Error checking notification support: $e");
+      return true; // Default to true if error
+    }
+  }
+
+  // Request permissions on the platform
+  static Future<bool> _requestPermissions() async {
+    // For Android 13+
+    final androidImplementation =
+        notificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidImplementation != null) {
+      final result =
+          await androidImplementation.requestNotificationsPermission();
+      return result ?? false;
+    }
+
+    // For iOS
+    final iOSImplementation =
+        notificationsPlugin.resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+
+    if (iOSImplementation != null) {
+      return await iOSImplementation.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+    }
+
+    return false;
+  }
+
+  // Open app notification settings
+  static Future<void> openNotificationSettings() async {
+    try {
+      // For Android
+      final androidImplementation =
+          notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidImplementation != null) {
+        await AppSettings.openAppSettings(
+          type: AppSettingsType.notification,
+        );
+        return;
+      }
+
+      // For iOS, we need to guide users to settings manually
+      throw Exception('Cannot open settings directly on this platform');
+    } catch (e) {
+      print('Error opening notification settings: $e');
+      // When direct settings access fails, show instructions to the user
+      // The UI will handle displaying instructions to manually open settings
+    }
+  }
+
+  // Show local push notification
+  static Future<void> showLocalPushNotification({
+    required String title,
+    required String message,
+    String? payload,
+  }) async {
+    print("showLocalPushNotification running");
+
+    // Check permission first
+    if (!await _areNotificationsSupported()) {
+      print("Notifications not permitted. Skipping notification.");
+      return;
+    }
+
+    // Android notification details with explicit icon resource
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'closecart_notifications',
+      'CloseCart Notifications',
+      channelDescription: 'Notifications from CloseCart app',
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: true,
+    );
+
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+    print("Notification details configured.");
+
+    try {
+      // Use a unique ID for each notification - millisecond wasn't unique enough
+      final int notificationId =
+          DateTime.now().millisecondsSinceEpoch.remainder(100000);
+
+      await notificationsPlugin.show(
+        notificationId,
+        title,
+        message,
+        platformChannelSpecifics,
+        payload: payload,
+      );
+      print("show notification called with title: $title, message: $message");
+    } catch (e) {
+      print("Error showing notification: $e");
+    }
+  }
 
   // Get JWT token from local storage
   static String? _getToken() {
@@ -286,5 +526,169 @@ class NotificationService {
   static int getUnreadCount() {
     final notifications = getCachedNotifications();
     return notifications.where((n) => !n.isRead).length;
+  }
+
+  // Create a notification via API and add it to the cache
+  static Future<bool> createNotification({
+    required String title,
+    required String message,
+    NotificationType type = NotificationType.system,
+    String? link,
+    String? resourceId,
+    bool showPushNotification = true,
+  }) async {
+    final userId = _getUserId();
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      // Prepare notification data
+      final Map<String, dynamic> notificationData = {
+        'user': userId,
+        'title': title,
+        'message': message,
+        'type': _typeToString(type),
+        'link': link,
+        'resourceId': resourceId,
+      };
+
+      // Make API call to create notification
+      final uri = Uri.parse('$_apiBaseUrl/notifications');
+      final response = await http
+          .post(
+        uri,
+        headers: _getAuthHeaders(),
+        body: json.encode(notificationData),
+      )
+          .timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception(
+              'Connection timeout. Creating notification locally instead.');
+        },
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['success']) {
+          // If API call was successful, update local cache with the new data
+          await fetchNotifications(backgroundRefresh: true);
+
+          // Show push notification if requested
+          if (showPushNotification) {
+            await showLocalPushNotification(
+              title: title,
+              message: message,
+              payload: link ?? resourceId,
+            );
+          }
+
+          return true;
+        } else {
+          // If API returned an error, create locally as fallback
+          print('API error creating notification: ${responseData['message']}');
+          return _createLocalNotification(
+            title: title,
+            message: message,
+            type: type,
+            link: link,
+            showPushNotification: showPushNotification,
+          );
+        }
+      } else {
+        // If HTTP error, create locally as fallback
+        print('HTTP error ${response.statusCode} creating notification');
+        return _createLocalNotification(
+          title: title,
+          message: message,
+          type: type,
+          link: link,
+          showPushNotification: showPushNotification,
+        );
+      }
+    } catch (e) {
+      // If exception, create locally as fallback
+      print('Error creating notification via API: $e');
+      return _createLocalNotification(
+        title: title,
+        message: message,
+        type: type,
+        link: link,
+        showPushNotification: showPushNotification,
+      );
+    }
+  }
+
+  // Helper to convert notification type to string
+  static String _typeToString(NotificationType type) {
+    switch (type) {
+      case NotificationType.shop:
+        return 'shop';
+      case NotificationType.offer:
+        return 'offer';
+      case NotificationType.order:
+        return 'order';
+      case NotificationType.info:
+        return 'info';
+      case NotificationType.error:
+        return 'error';
+      case NotificationType.system:
+      default:
+        return 'system';
+    }
+  }
+
+  // Create a local notification (fallback method when API is unavailable)
+  static Future<bool> _createLocalNotification({
+    required String title,
+    required String message,
+    NotificationType type = NotificationType.system,
+    String? link,
+    bool showPushNotification = true,
+  }) async {
+    try {
+      final userId = _getUserId() ?? '';
+
+      // Generate a temporary local ID
+      final id = 'local_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Create notification model
+      final notification = NotificationModel(
+        id: id,
+        userId: userId,
+        title: title,
+        message: message,
+        type: type,
+        link: link,
+        isRead: false,
+      );
+
+      // Get existing notifications and add new one at the beginning
+      final notifications = getCachedNotifications();
+      notifications.insert(0, notification);
+
+      // Update cache
+      await _cacheNotifications(notifications);
+
+      // Show push notification if requested and permissions granted
+      if (showPushNotification) {
+        if (await _areNotificationsSupported()) {
+          await showLocalPushNotification(
+            title: title,
+            message: message,
+            payload: link,
+          );
+        } else {
+          print("Notifications not permitted. Skipping push notification.");
+        }
+      }
+
+      return true;
+    } catch (e) {
+      print('Error creating local notification: $e');
+      return false;
+    }
   }
 }

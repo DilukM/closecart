@@ -1,91 +1,381 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:closecart/services/location_service.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
-import '../model/offerModel.dart'; // Add this import
+import '../models/offer_model.dart'; // Add this import
 
 class FavoriteOfferService {
-  static const String baseUrl =
-      "https://closecart-backend.vercel.app/api/v1/consumer/liked-offers";
+  static const String baseUrl = "https://closecart-backend.vercel.app/api/v1";
+  // Get device info
+  static Future<String> _getDeviceInfo() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
 
-  /// Toggle favorite status (add or remove from favorites)
-  static Future<Map<String, dynamic>> toggleFavorite(String offerId) async {
+    try {
+      if (Platform.isAndroid) {
+        final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+        return '${androidInfo.brand} ${androidInfo.model}';
+      } else if (Platform.isIOS) {
+        final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+        return '${iosInfo.name} ${iosInfo.model}';
+      }
+    } catch (e) {
+      print('Error getting device info: $e');
+      // Return a default value instead of null
+      return 'Unknown Device';
+    }
+
+    return 'Unknown Device';
+  }
+
+  // Get platform
+  static String _getPlatform() {
+    if (Platform.isAndroid) {
+      return 'Android';
+    } else if (Platform.isIOS) {
+      return 'iOS';
+    } else if (Platform.isWindows) {
+      return 'Windows';
+    } else if (Platform.isMacOS) {
+      return 'macOS';
+    } else if (Platform.isLinux) {
+      return 'Linux';
+    }
+    return 'Unknown';
+  }
+
+  /// Check if offer can be clicked (6-hour cooldown)
+  static bool canClickOffer(String offerId) {
+    try {
+      var box = Hive.box('authBox');
+      var offerClickTimestamps =
+          box.get('offerClickTimestamps') ?? <String, int>{};
+
+      // Convert to Map<String, int> if needed
+      Map<String, int> clickTimestamps =
+          Map<String, int>.from(offerClickTimestamps);
+
+      if (!clickTimestamps.containsKey(offerId)) {
+        return true; // Never clicked before
+      }
+
+      int lastClickTime = clickTimestamps[offerId]!;
+      int currentTime = DateTime.now().millisecondsSinceEpoch;
+      int sixHoursInMs = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
+      return (currentTime - lastClickTime) >= sixHoursInMs;
+    } catch (e) {
+      print('Error checking offer click cooldown: $e');
+      return true; // Default to allowing click on error
+    }
+  }
+
+  /// Record offer click timestamp
+  static void recordOfferClick(String offerId) {
+    try {
+      var box = Hive.box('authBox');
+      var offerClickTimestamps =
+          box.get('offerClickTimestamps') ?? <String, int>{};
+
+      // Convert to Map<String, int> if needed
+      Map<String, int> clickTimestamps =
+          Map<String, int>.from(offerClickTimestamps);
+      clickTimestamps[offerId] = DateTime.now().millisecondsSinceEpoch;
+
+      box.put('offerClickTimestamps', clickTimestamps);
+    } catch (e) {
+      print('Error recording offer click timestamp: $e');
+    }
+  }
+
+  /// Add offer click
+  static Future<Map<String, dynamic>> addOfferClick(String offerId) async {
+    // Check cooldown first
+    if (!canClickOffer(offerId)) {
+      return {
+        'success': false,
+        'message': 'Offer click is on cooldown (6 hours)',
+        'onCooldown': true,
+      };
+    }
     try {
       var box = Hive.box('authBox');
       var jwt = box.get('jwtToken');
 
       if (jwt == null) {
-        throw Exception('Authentication token not found');
+        return {
+          'success': false,
+          'message': 'User not authenticated',
+        };
       }
 
       // Get user ID from JWT
       final jwtToken = JWT.decode(jwt);
       final userId = jwtToken.payload['id'];
 
-      // Check if offer is already in favorites locally
-      var favorites = box.get('favorites') ?? [];
-      bool isAlreadyFavorite = favorites.contains(offerId);
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
 
-      // Make API request based on current favorite status
-      http.Response response;
-
-      if (isAlreadyFavorite) {
-        // DELETE request with proper format for axios-like clients
-        final deleteUrl = Uri.parse(baseUrl);
-        response = await http.delete(
-          deleteUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $jwt',
-          },
-          body: jsonEncode({
-            'userId': userId,
-            'offerId': offerId,
-          }),
-        );
-      } else {
-        // POST request to add to favorites
-        final postUrl = Uri.parse(baseUrl);
-        response = await http.post(
-          postUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $jwt',
-          },
-          body: jsonEncode({
-            'userId': userId,
-            'offerId': offerId,
-          }),
-        );
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
       }
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
+
+      final uri = Uri.parse('$baseUrl/interactions/');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: json.encode({
+          'userId': userId,
+          'interactionType': "OFFER_CLICK",
+          'targetType': "OFFER",
+          'targetId': offerId,
+          'action': "ADD",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+      if (response.statusCode == 200 && responseData['success']) {
+        // Record the click timestamp for cooldown
+        recordOfferClick(offerId);
+
         // Update local cache
-        if (isAlreadyFavorite) {
-          favorites.remove(offerId);
-        } else {
-          favorites.add(offerId);
+        var offerClicks = box.get('offerClicks') ?? [];
+        if (!offerClicks.contains(offerId)) {
+          offerClicks.add(offerId);
+          box.put('offerClicks', offerClicks);
         }
+
+        return {
+          'success': true,
+          'message': 'Offer click added',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': responseData['message'] ?? 'Failed to add clicked offer',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error: $e',
+      };
+    }
+  }
+
+  /// Add offer to favorites
+  static Future<Map<String, dynamic>> addToFavorites(String offerId) async {
+    try {
+      var box = Hive.box('authBox');
+      var jwt = box.get('jwtToken');
+
+      if (jwt == null) {
+        return {
+          'success': false,
+          'message': 'User not authenticated',
+        };
+      }
+
+      // Get user ID from JWT
+      final jwtToken = JWT.decode(jwt);
+      final userId = jwtToken.payload['id'];
+
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
+
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
+      }
+
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
+
+      final uri = Uri.parse('$baseUrl/interactions/');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: json.encode({
+          'userId': userId,
+          'interactionType': "OFFER_LIKE",
+          'targetType': "OFFER",
+          'targetId': offerId,
+          'action': "ADD",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+
+      if (response.statusCode == 200 && responseData['success']) {
+        // Update local cache
+        var favorites = box.get('favorites') ?? [];
+        if (!favorites.contains(offerId)) {
+          favorites.add(offerId);
+          box.put('favorites', favorites);
+        }
+
+        return {
+          'success': true,
+          'message': 'Offer added to favorites',
+          'isFavorite': true,
+        };
+      } else {
+        return {
+          'success': false,
+          'message':
+              responseData['message'] ?? 'Failed to add offer to favorites',
+          'isFavorite': false,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error: $e',
+        'isFavorite': false,
+      };
+    }
+  }
+
+  /// Remove offer from favorites
+  static Future<Map<String, dynamic>> removeFromFavorites(
+      String offerId) async {
+    try {
+      var box = Hive.box('authBox');
+      var jwt = box.get('jwtToken');
+
+      if (jwt == null) {
+        return {
+          'success': false,
+          'message': 'User not authenticated',
+        };
+      }
+
+      // Get user ID from JWT
+      final jwtToken = JWT.decode(jwt);
+      final userId = jwtToken.payload['id'];
+
+      // Get location, device info, and platform
+      UserLocation? userLocation;
+      List<double>? position;
+
+      try {
+        userLocation = await LocationService.getCurrentLocation();
+        position = [userLocation.longitude, userLocation.latitude];
+      } catch (e) {
+        print('Error getting location: $e');
+        position = null;
+      }
+
+      final deviceInfo = await _getDeviceInfo();
+      final platform = _getPlatform();
+
+      final uri = Uri.parse('$baseUrl/interactions/');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: json.encode({
+          'userId': userId,
+          'interactionType': "OFFER_LIKE",
+          'targetType': "OFFER",
+          'targetId': offerId,
+          'action': "REMOVE",
+          'metadata': {
+            'location': position != null
+                ? {
+                    'type': "Point",
+                    'coordinates': position,
+                  }
+                : null,
+            'deviceInfo': deviceInfo,
+            'platform': platform,
+          },
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+
+      if (response.statusCode == 200 && responseData['success']) {
+        // Update local cache
+        var favorites = box.get('favorites') ?? [];
+        favorites.remove(offerId);
         box.put('favorites', favorites);
 
         return {
           'success': true,
-          'isFavorite': !isAlreadyFavorite,
-          'message': isAlreadyFavorite
-              ? 'Removed from favorites'
-              : 'Added to favorites'
+          'message': 'Offer removed from favorites',
+          'isFavorite': false,
         };
       } else {
-        print('Failed to toggle favorite: ${response.body}');
-        final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['message'] ?? 'Failed to update favorites'
+          'message': responseData['message'] ??
+              'Failed to remove offer from favorites',
+          'isFavorite': true,
         };
       }
-    } catch (error) {
-      print('Error toggling favorite: $error');
-      return {'success': false, 'message': error.toString()};
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error: $e',
+        'isFavorite': true,
+      };
+    }
+  }
+
+  /// Toggle favorite status (add or remove from favorites)
+  static Future<Map<String, dynamic>> toggleFavorite(String offerId) async {
+    // Check if offer is already in favorites locally
+    var box = Hive.box('authBox');
+    var favorites = box.get('favorites') ?? [];
+    bool isAlreadyFavorite = favorites.contains(offerId);
+
+    if (isAlreadyFavorite) {
+      return await removeFromFavorites(offerId);
+    } else {
+      return await addToFavorites(offerId);
     }
   }
 
@@ -114,16 +404,14 @@ class FavoriteOfferService {
       // Get user ID from JWT
       final jwtToken = JWT.decode(jwt);
       final userId = jwtToken.payload['id'];
-      print("userId: $userId");
 
       // Make API request
       final response = await http.get(
-        Uri.parse('$baseUrl/$userId'),
+        Uri.parse('$baseUrl/consumer/liked-offers/$userId'),
         headers: {
           'Authorization': 'Bearer $jwt',
         },
       );
-      print(response.body);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

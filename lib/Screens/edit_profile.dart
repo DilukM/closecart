@@ -28,12 +28,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
   DateTime? _selectedDate;
   String? _imageUrl;
   bool _isUploadingImage = false;
-
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _birthdayController.dispose();
     super.dispose();
   }
 
@@ -41,7 +41,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void initState() {
     _nameController.text = widget.profileData!['name'];
     _emailController.text = widget.profileData!['email'];
-    _phoneController.text = widget.profileData!['phone'];
+    _phoneController.text = widget.profileData!['phone'].toString();
     _imageUrl = widget.profileData!['imageUrl'];
 
     // Initialize birthday and gender if they exist in profile data
@@ -340,9 +340,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           child: const Text(
                             'SAVE CHANGES',
                             style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black),
                           ),
                         ),
                       ),

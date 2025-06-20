@@ -1,5 +1,5 @@
 import 'package:closecart/Widgets/offerCard.dart';
-import 'package:closecart/model/offerModel.dart';
+import 'package:closecart/models/offer_model.dart';
 import 'package:closecart/services/favoriteOfferService.dart';
 import 'package:flutter/material.dart';
 
@@ -27,19 +27,22 @@ class _FavouritePageState extends State<FavouritePage> {
 
   /// Load cached favorites data
   void _loadCachedFavorites() {
-    final cachedData = FavoriteOfferService.getCachedFavoriteOffers();
-
-    // Convert the cached map data to Offer objects
+    final cachedData = FavoriteOfferService
+        .getCachedFavoriteOffers(); // Convert the cached map data to Offer objects
     List<Offer> offers =
         cachedData.map((offerJson) => Offer.fromJson(offerJson)).toList();
 
-    setState(() {
-      _favoriteOffers = offers;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _favoriteOffers = offers;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _fetchFavorites({bool backgroundRefresh = false}) async {
+    if (!mounted) return;
+
     if (backgroundRefresh) {
       setState(() {
         _isBackgroundLoading = true;
@@ -60,17 +63,22 @@ class _FavouritePageState extends State<FavouritePage> {
       // Convert the map data to Offer objects
       List<Offer> offers = favoriteOffersData;
 
-      setState(() {
-        _favoriteOffers = offers;
-        _isLoading = false;
-        _isBackgroundLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _favoriteOffers = offers;
+          _isLoading = false;
+          _isBackgroundLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _isBackgroundLoading = false;
-        _errorMessage = backgroundRefresh ? '' : 'Failed to load favorites: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isBackgroundLoading = false;
+          _errorMessage =
+              backgroundRefresh ? '' : 'Failed to load favorites: $e';
+        });
+      }
     }
   }
 

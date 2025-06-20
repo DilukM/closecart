@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:closecart/Screens/OfferView.dart';
-import 'package:closecart/model/offerModel.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/offer_model.dart';
+import 'package:closecart/models/shop_model.dart';
 import 'package:closecart/services/shop_cache_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -91,7 +91,7 @@ class _OfferCardState extends State<OfferCard> {
   /// Get shop name with fallback
   String getShopName() {
     final Shop? shop = getShopDetails();
-    print('Shop details: $shop');
+
     if (shop != null) {
       return shop.name;
     }
@@ -149,11 +149,8 @@ class _OfferCardState extends State<OfferCard> {
                   child: CachedNetworkImage(
                     imageUrl: widget.offer.imageUrl,
                     placeholder: (context, url) => Shimmer.fromColors(
-                      baseColor: Theme.of(context).colorScheme.surface,
-                      highlightColor: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withOpacity(0.3),
+                      baseColor: Colors.grey[300]!,
+                      highlightColor: Colors.grey[100]!,
                       child: Container(
                         color: Theme.of(context).colorScheme.surface,
                       ),
@@ -226,12 +223,8 @@ class _OfferCardState extends State<OfferCard> {
                       Expanded(
                         child: _isLoadingShop
                             ? Shimmer.fromColors(
-                                baseColor:
-                                    Theme.of(context).colorScheme.surface,
-                                highlightColor: Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withOpacity(0.3),
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
                                 child: Container(
                                   height: 14,
                                   width: 100,

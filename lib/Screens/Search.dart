@@ -1,6 +1,6 @@
 import 'package:closecart/Widgets/offerCard.dart';
-import 'package:closecart/model/offerModel.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/offer_model.dart';
+import 'package:closecart/models/shop_model.dart';
 import 'package:closecart/services/shop_cache_service.dart';
 import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
 import 'package:flutter/material.dart';
@@ -64,10 +64,12 @@ class _SearchPageState extends State<SearchPage> {
               .map((offerJson) => Offer.fromJson(offerJson))
               .toList();
 
-          setState(() {
-            offers = offersList;
-            filteredOffers = offers;
-          });
+          if (mounted) {
+            setState(() {
+              offers = offersList;
+              filteredOffers = offers;
+            });
+          }
         } else {
           throw Exception('Offers data is null or missing');
         }
@@ -182,9 +184,8 @@ class _SearchPageState extends State<SearchPage> {
               const SizedBox(height: 16),
               filteredOffers.isEmpty
                   ? Shimmer.fromColors(
-                      baseColor:
-                          Theme.of(context).colorScheme.surface.withAlpha(20),
-                      highlightColor: Theme.of(context).colorScheme.surface,
+                      baseColor: Colors.grey[300]!,
+                      highlightColor: Colors.grey[100]!,
                       child: GridView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),

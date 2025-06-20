@@ -4,7 +4,7 @@ import 'package:hive/hive.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:closecart/services/geofence_service.dart';
 import 'package:closecart/services/shop_cache_service.dart';
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
 
 class RecommendationService {
   static const String baseUrl =

@@ -1,8 +1,14 @@
-import 'package:closecart/Screens/editProfile.dart';
+import 'package:closecart/Screens/edit_profile.dart';
 import 'package:closecart/services/authService.dart';
+import 'package:closecart/services/notificationService.dart';
+import 'package:closecart/services/preferences_service.dart';
+import 'package:closecart/services/settings_cache_service.dart';
+import 'package:closecart/widgets/category_selection_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:toastification/toastification.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -14,27 +20,49 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   // Settings state
   bool _locationTrackingEnabled = true;
-  double _geofenceRadius = 5.0; // in kilometers
-  final List<String> _allCategories = [
-    'Food',
-    'Beauty',
-    'Fashion',
-    'Shoes',
-    'Tech',
-    'Home',
-    'Sports',
-    'Books',
-    'Toys',
-    'Health'
-  ];
-  final List<String> _selectedCategories = ['Food', 'Fashion', 'Tech'];
+  double _geofenceRadius = 1.0; // Will be updated from cache (in kilometers)
+  List<String> _allCategories = [];
+  List<String> _selectedCategories = [];
   final AuthService _authService = AuthService();
   Map<dynamic, dynamic>? _profileData;
+  bool _notificationsLoading = false;
+  bool _categoriesLoading = false;
+  bool _isSavingCategories = false;
+  bool _isDisposed = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfileData();
+    _loadSettings();
+    _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  // Safe setState that checks if the widget is still mounted
+  void _safeSetState(VoidCallback fn) {
+    if (mounted && !_isDisposed) {
+      setState(fn);
+    }
+  }
+
+  Future<void> _loadSettings() async {
+    // Initialize settings cache
+    await SettingsCacheService.init();
+
+    // Load geofence radius (convert from meters to km for display)
+    double radiusInMeters = SettingsCacheService.getGeofenceRadius();
+
+    if (mounted) {
+      setState(() {
+        _geofenceRadius = SettingsCacheService.metersToKm(radiusInMeters);
+      });
+    }
   }
 
   Future<void> _loadProfileData() async {
@@ -45,10 +73,46 @@ class _SettingsPageState extends State<SettingsPage> {
       // Fetch profile data from the backend
       profileData = await _authService.fetchProfileData();
     }
+    print("Profile data loaded: $profileData");
+    if (mounted) {
+      setState(() {
+        _profileData = profileData!;
+      });
+    }
+  }
 
-    setState(() {
-      _profileData = profileData!;
+  Future<void> _loadCategories() async {
+    _safeSetState(() {
+      _categoriesLoading = true;
     });
+
+    try {
+      // Load all available categories
+      final allCategories = await PreferencesService.getAllCategories();
+
+      // Load user's selected categories
+      final userCategories = await PreferencesService.getUserCategories();
+
+      // Update state
+      if (mounted) {
+        setState(() {
+          _allCategories = allCategories;
+          _selectedCategories = userCategories;
+          _categoriesLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading categories: $e');
+      if (mounted) {
+        setState(() {
+          _categoriesLoading = false;
+          // Use defaults if there's an error - fixed by using public methods
+          _allCategories = PreferencesService.getDefaultCategories();
+          _selectedCategories =
+              PreferencesService.getDefaultSelectedCategories();
+        });
+      }
+    }
   }
 
   @override
@@ -88,13 +152,49 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
               const SizedBox(height: 24),
-
               // Preferences
               _buildSectionHeader(context, 'Preferences'),
               const SizedBox(height: 16),
               _buildSettingsCard(
                 context,
                 [
+                  Consumer<NotificationPermissionProvider>(
+                    builder: (context, provider, child) {
+                      return _buildSwitchTile(
+                        context,
+                        'Push Notifications',
+                        Icons.notifications_outlined,
+                        provider.permissionGranted,
+                        (value) async {
+                          if (_notificationsLoading) return;
+
+                          if (value) {
+                            // If trying to enable notifications
+                            setState(() => _notificationsLoading = true);
+                            final granted = await NotificationService
+                                .requestNotificationPermissions();
+                            setState(() => _notificationsLoading = false);
+
+                            if (!granted) {
+                              // If permission request was denied, show settings dialog
+                              _showNotificationSettingsDialog(context);
+                            } else {
+                              // Update the provider with new permission status
+                              Provider.of<NotificationPermissionProvider>(
+                                      context,
+                                      listen: false)
+                                  .permissionGranted = granted;
+                            }
+                          } else {
+                            // If turning off, show settings dialog to guide user
+                            _showNotificationSettingsDialog(context);
+                          }
+                        },
+                        isLoading: _notificationsLoading,
+                      );
+                    },
+                  ),
+                  _buildDivider(context),
                   _buildSettingsTile(
                     context,
                     'Preferred Categories',
@@ -104,6 +204,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 24),
               // Account Settings
               _buildSectionHeader(context, 'Account Settings'),
@@ -344,8 +445,9 @@ class _SettingsPageState extends State<SettingsPage> {
     String title,
     IconData icon,
     bool value,
-    Function(bool) onChanged,
-  ) {
+    Function(bool) onChanged, {
+    bool isLoading = false,
+  }) {
     return SwitchListTile(
       secondary: Icon(
         icon,
@@ -390,16 +492,24 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     Slider(
                       value: _geofenceRadius,
-                      min: 1.0,
-                      max: 10.0,
-                      divisions: 9,
-                      label: "${_geofenceRadius.toInt()} km",
+                      min: 0.1,
+                      max: 5.0,
+                      divisions: 49,
+                      label: "${_geofenceRadius.toStringAsFixed(1)} km",
                       onChanged: (value) {
                         setState(() {
                           _geofenceRadius = value;
                         });
+
+                        // Save the new radius to local storage (convert to meters)
+                        SettingsCacheService.saveGeofenceRadius(
+                            SettingsCacheService.kmToMeters(_geofenceRadius));
                       },
                       activeColor: Theme.of(context).colorScheme.primary,
+                      inactiveColor: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.1),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -407,7 +517,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '1 km',
+                            '0.1 km',
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: Theme.of(context)
@@ -417,7 +527,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ),
                           ),
                           Text(
-                            '5 km',
+                            '2.5 km',
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: Theme.of(context)
@@ -427,7 +537,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ),
                           ),
                           Text(
-                            '10 km',
+                            '5.0 km',
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: Theme.of(context)
@@ -464,6 +574,12 @@ class _SettingsPageState extends State<SettingsPage> {
     final currentPasswordController = TextEditingController();
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
+
+    void disposeControllers() {
+      currentPasswordController.dispose();
+      newPasswordController.dispose();
+      confirmPasswordController.dispose();
+    }
 
     showDialog(
       context: context,
@@ -535,13 +651,38 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              // Implement password change logic
+            onPressed: () async {
+              try {
+                final response = await _authService.changePassword(
+                    _profileData!['email'],
+                    currentPasswordController.text,
+                    newPasswordController.text);
+                print(response.statusCode);
+                if (response.statusCode == 200) {
+                  toastification.show(
+                      autoCloseDuration: Duration(seconds: 3),
+                      context: context,
+                      title: Text(response.body),
+                      type: ToastificationType.success);
+                } else {
+                  toastification.show(
+                      autoCloseDuration: Duration(seconds: 3),
+                      context: context,
+                      title: Text(response.body),
+                      type: ToastificationType.error);
+                }
+              } catch (err) {
+                toastification.show(
+                    autoCloseDuration: Duration(seconds: 3),
+                    context: context,
+                    title: Text('Failed to update password'),
+                    description: Text(err.toString()),
+                    type: ToastificationType.error);
+              }
+
+              disposeControllers();
               Navigator.of(context).pop();
               // Show success message
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Password updated successfully')),
-              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
@@ -551,7 +692,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Update'),
+            child: const Text(
+              'Update',
+              style: TextStyle(color: Colors.black),
+            ),
           ),
         ],
         shape: RoundedRectangleBorder(
@@ -598,7 +742,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Logout'),
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: Colors.black),
+            ),
           ),
         ],
         shape: RoundedRectangleBorder(
@@ -610,6 +757,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _showDeleteAccountConfirmation(BuildContext context) {
     final passwordController = TextEditingController();
+
+    void disposeController() {
+      passwordController.dispose();
+    }
 
     showDialog(
       context: context,
@@ -651,6 +802,7 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () {
+              disposeController();
               Navigator.of(context).pop();
             },
             child: const Text('Cancel'),
@@ -658,6 +810,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ElevatedButton(
             onPressed: () {
               // Implement account deletion logic
+              disposeController();
               Navigator.of(context).pop();
               Navigator.of(context).pushReplacementNamed('/login');
             },
@@ -680,87 +833,97 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showCategoriesDialog(BuildContext context) {
-    // Create a temporary list to track selection changes
-    List<String> tempSelectedCategories = List.from(_selectedCategories);
+    CategorySelectionDialog.show(
+      context: context,
+      allCategories: _allCategories,
+      selectedCategories: _selectedCategories,
+      isLoading: _categoriesLoading,
+      onSave: (List<String> tempSelectedCategories) async {
+        // Update categories via API
+        final success = await PreferencesService.updateUserCategories(
+            tempSelectedCategories);
 
+        // Update local state
+        if (mounted) {
+          setState(() {
+            _selectedCategories.clear();
+            _selectedCategories.addAll(tempSelectedCategories);
+          });
+        }
+
+        // Show confirmation
+        if (context.mounted) {
+          toastification.show(
+            context: context,
+            type:
+                success ? ToastificationType.success : ToastificationType.info,
+            title: Text(
+                success ? 'Categories updated' : 'Categories saved locally'),
+            autoCloseDuration: const Duration(seconds: 3),
+          );
+        }
+
+        return success;
+      },
+    );
+  }
+
+  // Show dialog when notification permissions need to be modified from device settings
+  void _showNotificationSettingsDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: Text(
-              'Preferred Categories',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: _allCategories.map((category) {
-                  return CheckboxListTile(
-                    title: Text(category),
-                    value: tempSelectedCategories.contains(category),
-                    onChanged: (bool? value) {
-                      setState(() {
-                        if (value == true) {
-                          tempSelectedCategories.add(category);
-                        } else {
-                          tempSelectedCategories.remove(category);
-                        }
-                      });
-                    },
-                    activeColor: Theme.of(context).colorScheme.primary,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                  );
-                }).toList(),
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Notification Permissions',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        content: const Text(
+          'To change notification permissions, you need to update them in your device settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.7),
-                  ),
-                ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // Open device notification settings
+              await NotificationService.openNotificationSettings();
+
+              // Check permission status again after returning from settings
+              await Future.delayed(const Duration(seconds: 1));
+              final permissionStatus =
+                  await NotificationService.checkCurrentPermissionStatus();
+              if (context.mounted) {
+                Provider.of<NotificationPermissionProvider>(context,
+                        listen: false)
+                    .permissionGranted = permissionStatus;
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              ElevatedButton(
-                onPressed: () {
-                  // Update categories
-                  setState(() {
-                    _selectedCategories.clear();
-                    _selectedCategories.addAll(tempSelectedCategories);
-                  });
-                  Navigator.of(context).pop();
-                  // Show confirmation
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Categories updated')),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text('Save'),
-              ),
-            ],
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
             ),
-          );
-        },
+            child: const Text('Open Settings'),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
     );
   }

@@ -1,4 +1,4 @@
-import 'package:closecart/model/shopModel.dart';
+import 'package:closecart/models/shop_model.dart';
 import 'package:hive/hive.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;

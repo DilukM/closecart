@@ -1,7 +1,7 @@
 import 'package:closecart/Widgets/categoryItem.dart';
 import 'package:closecart/Widgets/offerCard.dart';
 import 'package:closecart/Widgets/sectionTile.dart';
-import 'package:closecart/model/offerModel.dart';
+import 'package:closecart/models/offer_model.dart';
 import 'package:closecart/services/recommendationService.dart';
 import 'package:closecart/services/location_service.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +38,7 @@ class _HomeState extends State<Home> {
       // Try to get cached location first
       var box = Hive.box('authBox');
       final cachedCity = box.get('lastKnownCity');
-      if (cachedCity != null) {
+      if (cachedCity != null && mounted) {
         setState(() {
           _currentCity = cachedCity;
         });
@@ -48,7 +48,7 @@ class _HomeState extends State<Home> {
       final cachedResult =
           RecommendationService.getCachedRecommendations(city: _currentCity);
 
-      if (cachedResult['success'] == true) {
+      if (cachedResult['success'] == true && mounted) {
         // Convert raw JSON data to Offer objects
         List<Offer> offers = (cachedResult['recommendations'] as List)
             .map((offerJson) => Offer.fromJson(offerJson))
@@ -70,12 +70,14 @@ class _HomeState extends State<Home> {
 
   Future<void> _loadRecommendations(
       {bool forceRefresh = false, bool backgroundRefresh = false}) async {
+    if (!mounted) return; // Don't proceed if widget is no longer in the tree
+
     try {
-      if (backgroundRefresh) {
+      if (backgroundRefresh && mounted) {
         setState(() {
           _isBackgroundLoading = true;
         });
-      } else if (_recommendedOffers.isEmpty) {
+      } else if (_recommendedOffers.isEmpty && mounted) {
         // Only show loading indicator if we have no data to display
         setState(() {
           _isInitialLoading = true;
@@ -90,6 +92,8 @@ class _HomeState extends State<Home> {
       var box = Hive.box('authBox');
       box.put('lastKnownCity', currentCity);
 
+      if (!mounted) return; // Check again before setState
+
       setState(() {
         _currentCity = currentCity;
       });
@@ -102,6 +106,8 @@ class _HomeState extends State<Home> {
         forceRefresh: forceRefresh,
         backgroundRefresh: backgroundRefresh,
       );
+
+      if (!mounted) return; // Check again before final setState
 
       setState(() {
         if (result['success'] == true) {
@@ -119,6 +125,8 @@ class _HomeState extends State<Home> {
         _isBackgroundLoading = false;
       });
     } catch (e) {
+      if (!mounted) return; // Check before setState in catch block
+
       setState(() {
         if (!backgroundRefresh) {
           // Only show error messages for foreground refreshes

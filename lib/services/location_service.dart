@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'dart:async'; // Add this import
 
 /// A model class to store location data
 class UserLocation {
@@ -18,6 +19,95 @@ class UserLocation {
 
 class LocationService {
   static Position? _lastKnownPosition;
+  static StreamController<UserLocation>? _locationController;
+
+  /// Get a stream of user location updates
+  static Stream<UserLocation> getLocationStream({
+    LocationAccuracy accuracy = LocationAccuracy.high,
+    int distanceFilter = 10, // minimum distance (meters) before updates
+    Duration? timeInterval,
+  }) {
+    // Create a stream controller if it doesn't exist
+    _locationController ??= StreamController<UserLocation>.broadcast();
+
+    // Listen to the Geolocator position stream
+    Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        accuracy: accuracy,
+        distanceFilter: distanceFilter,
+        timeLimit: timeInterval,
+      ),
+    ).listen(
+      (Position position) async {
+        _lastKnownPosition = position;
+
+        try {
+          // Convert position to UserLocation with address info
+          List<Placemark> placemarks = await placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+          );
+
+          Placemark place =
+              placemarks.isNotEmpty ? placemarks.first : Placemark();
+
+          // Format the address
+          List<String> addressParts = [
+            place.street,
+            place.subLocality,
+            place.locality,
+            place.postalCode,
+            place.country,
+          ]
+              .where((part) => part != null && part.isNotEmpty)
+              .map((part) => part!)
+              .toList();
+
+          String address = addressParts.join(", ");
+
+          // Use the name of the place or a nearby POI
+          String placeName = place.name ??
+              place.locality ??
+              place.subLocality ??
+              'Unknown location';
+          if (placeName.isEmpty) placeName = 'Unknown location';
+
+          // Add the UserLocation to the stream
+          _locationController?.add(
+            UserLocation(
+              latitude: position.latitude,
+              longitude: position.longitude,
+              address: address,
+              placeName: placeName,
+            ),
+          );
+        } catch (e) {
+          print('Error in location stream: $e');
+          // Even if geocoding fails, we still want to emit location coords
+          _locationController?.add(
+            UserLocation(
+              latitude: position.latitude,
+              longitude: position.longitude,
+              address: "Unknown address",
+              placeName: "Unknown location",
+            ),
+          );
+        }
+      },
+      onError: (error) {
+        print('Location stream error: $error');
+        _locationController?.addError(error);
+      },
+    );
+
+    return _locationController!.stream;
+  }
+
+  /// Dispose of the location stream resources
+  static void dispose() {
+    _locationController?.close();
+    _locationController = null;
+  }
 
   /// Get the user's current location including coordinates, address and place name
   static Future<UserLocation> getCurrentLocation() async {

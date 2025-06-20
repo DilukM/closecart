@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
-import 'package:closecart/model/notificationModel.dart';
+import 'package:closecart/models/notification_model.dart';
 import 'package:closecart/services/notificationService.dart';
+import 'package:toastification/toastification.dart';
 
 class NotificationPage extends StatefulWidget {
-  const NotificationPage({Key? key}) : super(key: key);
+  const NotificationPage({super.key});
 
   @override
   State<NotificationPage> createState() => _NotificationPageState();
@@ -17,6 +17,7 @@ class _NotificationPageState extends State<NotificationPage> {
   bool _isLoading = true;
   String _errorMessage = '';
   bool _isMarkingAllAsRead = false;
+  bool _isTestingNotification = false;
 
   @override
   void initState() {
@@ -25,6 +26,8 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Future<void> _loadNotifications() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = '';
@@ -33,28 +36,114 @@ class _NotificationPageState extends State<NotificationPage> {
     try {
       // First load cached notifications instantly
       _notifications = NotificationService.getCachedNotifications();
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
 
       // Then fetch fresh data from API
       final freshNotifications = await NotificationService.fetchNotifications();
-      setState(() {
-        _notifications = freshNotifications;
-      });
+      if (mounted) {
+        setState(() {
+          _notifications = freshNotifications;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load notifications: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load notifications: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Test notification creation
+  Future<void> _testCreateNotification() async {
+    if (_isTestingNotification || !mounted) return;
+
+    setState(() {
+      _isTestingNotification = true;
+    });
+
+    // Mock data for test notifications
+    final List<Map<String, dynamic>> testNotifications = [
+      {
+        'title': 'Order Placed Successfully',
+        'message':
+            'Your order #1234 has been placed. Thank you for shopping with us!',
+        'type': NotificationType.order,
+      },
+      {
+        'title': 'New Offer Available',
+        'message': 'Get 20% off on all electronics until tomorrow!',
+        'type': NotificationType.offer,
+      },
+      {
+        'title': 'Shop Update',
+        'message': 'Your favorite shop has added new items to their inventory.',
+        'type': NotificationType.shop,
+      },
+      {
+        'title': 'Info',
+        'message':
+            'CloseCart will be undergoing maintenance on Sunday from 2-4 AM.',
+        'type': NotificationType.info,
+      },
+      {
+        'title': 'Payment Error',
+        'message':
+            'There was an issue processing your payment. Please check your payment details.',
+        'type': NotificationType.error,
+      },
+    ];
+
+    // Select a random test notification
+    final testData =
+        testNotifications[DateTime.now().second % testNotifications.length];
+
+    try {
+      final success = await NotificationService.createNotification(
+        title: testData['title'],
+        message: testData['message'],
+        type: testData['type'],
+        showPushNotification: true,
+      );
+
+      if (success && mounted) {
+        // Reload notifications
+        await _loadNotifications();
+        if (mounted) {
+          toastification.show(
+            context: context,
+            title: Text('Test notification created successfully'),
+            type: ToastificationType.success,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        toastification.show(
+          context: context,
+          title: Text('Error creating test notification: $e'),
+          type: ToastificationType.error,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTestingNotification = false;
+        });
+      }
     }
   }
 
   Future<void> _markAsRead(NotificationModel notification) async {
-    if (notification.isRead) return;
+    if (notification.isRead || !mounted) return;
 
     final success = await NotificationService.markAsRead(notification.id);
-    if (success) {
+    if (success && mounted) {
       setState(() {
         final index = _notifications.indexOf(notification);
         if (index != -1) {
@@ -65,7 +154,7 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Future<void> _markAllAsRead() async {
-    if (_isMarkingAllAsRead) return;
+    if (_isMarkingAllAsRead || !mounted) return;
 
     setState(() {
       _isMarkingAllAsRead = true;
@@ -73,49 +162,47 @@ class _NotificationPageState extends State<NotificationPage> {
 
     final success = await NotificationService.markAllAsRead();
 
-    setState(() {
-      _isMarkingAllAsRead = false;
+    if (mounted) {
+      setState(() {
+        _isMarkingAllAsRead = false;
 
-      if (success) {
-        _notifications =
-            _notifications.map((n) => n.copyWith(isRead: true)).toList();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('All notifications marked as read')),
-        );
-      }
-    });
+        if (success) {
+          _notifications =
+              _notifications.map((n) => n.copyWith(isRead: true)).toList();
+          toastification.show(
+            context: context,
+            title: Text('All notifications marked as read'),
+            type: ToastificationType.success,
+          );
+        }
+      });
+    }
   }
 
   Future<void> _deleteNotification(NotificationModel notification) async {
     final success =
         await NotificationService.deleteNotification(notification.id);
 
-    if (success) {
+    if (success && mounted) {
       setState(() {
         _notifications.removeWhere((n) => n.id == notification.id);
       });
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Notification deleted'),
-          action: SnackBarAction(
-            label: 'UNDO',
-            onPressed: () {
-              setState(() {
-                _loadNotifications();
-              });
-            },
-          ),
-        ),
-      );
+      if (mounted) {
+        toastification.show(
+          context: context,
+          title: Text('Notification deleted'),
+          type: ToastificationType.success,
+          autoCloseDuration: const Duration(seconds: 3),
+        );
+      }
     }
   }
 
   Widget _buildShimmerItem() {
     return Shimmer.fromColors(
-      baseColor: Colors.grey.shade300,
-      highlightColor: Colors.grey.shade100,
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
       child: Container(
         margin: EdgeInsets.only(bottom: 16),
         padding: EdgeInsets.all(16),
@@ -399,6 +486,21 @@ class _NotificationPageState extends State<NotificationPage> {
                     itemBuilder: (context, index) =>
                         _buildNotificationItem(_notifications[index]),
                   ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _isTestingNotification ? null : _testCreateNotification,
+        tooltip: 'Test Notification',
+        child: _isTestingNotification
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : Icon(Icons.notification_add),
+        backgroundColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }
