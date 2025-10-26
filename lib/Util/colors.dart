@@ -14,7 +14,7 @@ class AppColors {
   static const Color accentLight = Color.fromARGB(255, 251, 251, 187);
   static const Color accentDark = Color.fromARGB(255, 161, 151, 13);
 
-  static const Color backgroundLight = Color.fromARGB(255, 236, 236, 236);
+  static const Color backgroundLight = Color.fromARGB(255, 243, 241, 241);
   static const Color backgroundDark = Color.fromARGB(255, 31, 31, 31);
 
   static const Color surfaceLight = Color.fromARGB(255, 255, 255, 255);

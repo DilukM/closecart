@@ -25,12 +25,21 @@ class _FavouritePageState extends State<FavouritePage> {
     _fetchFavorites(backgroundRefresh: true);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when page becomes visible again
+    _fetchFavorites(backgroundRefresh: true);
+  }
+
   /// Load cached favorites data
   void _loadCachedFavorites() {
     final cachedData = FavoriteOfferService
         .getCachedFavoriteOffers(); // Convert the cached map data to Offer objects
     List<Offer> offers =
         cachedData.map((offerJson) => Offer.fromJson(offerJson)).toList();
+
+    print("Loaded ${offers.length} cached favorites");
 
     if (mounted) {
       setState(() {
@@ -62,6 +71,8 @@ class _FavouritePageState extends State<FavouritePage> {
 
       // Convert the map data to Offer objects
       List<Offer> offers = favoriteOffersData;
+
+      print("Fetched ${offers.length} favorites from service");
 
       if (mounted) {
         setState(() {

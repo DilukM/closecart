@@ -8,7 +8,7 @@ import 'package:closecart/models/shop_model.dart';
 
 class RecommendationService {
   static const String baseUrl =
-      "https://kmeans-ggnx.onrender.com/cluster_recommend";
+      "https://kmeans-alpha.vercel.app/cluster_recommend";
 
   /// Get cached recommendations for immediate display
   static Map<String, dynamic> getCachedRecommendations({String? city}) {

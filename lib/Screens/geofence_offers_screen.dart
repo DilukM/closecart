@@ -1,3 +1,4 @@
+import 'package:closecart/Screens/OfferView.dart';
 import 'package:closecart/Widgets/offerTile.dart';
 import 'package:closecart/models/offer_model.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +13,9 @@ import 'package:closecart/services/settings_cache_service.dart';
 import 'package:closecart/models/shop_model.dart';
 import 'package:closecart/services/notificationService.dart';
 import 'package:closecart/models/notification_model.dart';
+import 'package:closecart/services/audio_service.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:hive/hive.dart';
 import 'dart:async';
 
 class GeofenceOffersScreen extends StatefulWidget {
@@ -68,6 +71,7 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
     // Cancel subscriptions when widget is disposed
     _locationSubscription?.cancel();
     _offersRefreshTimer?.cancel();
+    AudioService.stopAlarm(); // Stop any playing alarm sounds
     super.dispose();
   }
 
@@ -238,14 +242,25 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
         Set<String> currentOfferIds = offers.map((offer) => offer.id).toSet();
         Set<String> newOfferIds = currentOfferIds.difference(_previousOfferIds);
 
-        // If there are new offers and we've already initialized (not first load)
+        print('DEBUG: Current offers: ${currentOfferIds.length}');
+        print('DEBUG: Previous offers: ${_previousOfferIds.length}');
+        print('DEBUG: New offers detected: ${newOfferIds.length}');
+
+        // If there are new offers and we've already initialized
         if (newOfferIds.isNotEmpty && _previousOfferIds.isNotEmpty) {
           // Find the new offers
           List<Offer> newOffers =
               offers.where((offer) => newOfferIds.contains(offer.id)).toList();
 
+          print(
+              'DEBUG: New offers list: ${newOffers.map((o) => o.title).toList()}');
+
           // Create notifications for new offers
           _createNewOffersNotifications(newOffers);
+        } else if (_previousOfferIds.isEmpty) {
+          print('DEBUG: First load - not creating notifications');
+        } else {
+          print('DEBUG: No new offers to notify about');
         }
 
         // Update previous offers for next comparison
@@ -272,11 +287,13 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
                     offer.shop["location"]["coordinates"][0]),
                 builder: (ctx) => GestureDetector(
                   onTap: () => _showOfferInfo(offer),
-                  child: const Icon(
-                    Icons.store,
-                    color: Colors.red,
-                    size: 30.0,
-                  ),
+                  child: Image.asset('assets/images/shopLocationPin.png',
+                      width: 30, height: 30),
+                  // const Icon(
+                  //   Icons.location_pin,
+                  //   color: Colors.red,
+                  //   size: 30.0,
+                  // ),
                 ),
               ),
             );
@@ -303,6 +320,27 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
   void _createNewOffersNotifications(List<Offer> newOffers) async {
     if (newOffers.isEmpty) return;
 
+    print('DEBUG: Creating notifications for ${newOffers.length} new offers');
+
+    // Check if user is authenticated
+    try {
+      final box = Hive.box('authBox');
+      final jwtToken = box.get('jwtToken');
+      print('DEBUG: JWT Token exists: ${jwtToken != null}');
+
+      if (jwtToken != null) {
+        print(
+            'DEBUG: JWT Token (first 20 chars): ${jwtToken.toString().substring(0, jwtToken.toString().length > 20 ? 20 : jwtToken.toString().length)}...');
+      }
+
+      // Check notification permissions
+      final permissionGranted =
+          await NotificationService.checkCurrentPermissionStatus();
+      print('DEBUG: Notification permission granted: $permissionGranted');
+    } catch (e) {
+      print('DEBUG: Error checking JWT token or permissions: $e');
+    }
+
     try {
       // For single offer notification
       if (newOffers.length == 1) {
@@ -310,23 +348,49 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
         String shopName = ShopCacheService.getShopNameById(offer.shopId,
             fallback: offer.shop!["name"] ?? 'Unknown Store');
 
+        print(
+            'DEBUG: Creating notification for offer: ${offer.title} at $shopName');
+
         // Use the notification service to create a notification via API
-        await NotificationService.createNotification(
+        bool success = await NotificationService.createNotification(
           title: 'New Offer Available',
           message: '${offer.title} at $shopName',
           type: NotificationType.offer,
           link: '/offers/${offer.id}',
           resourceId: offer.id, // Use offer ID as the resource ID
         );
+
+        print('DEBUG: Notification creation result: $success');
+
+        if (success) {
+          // Play alarm sound for new offer notification
+          await AudioService.playAlarm();
+          print('DEBUG: Alarm sound played');
+        } else {
+          print('DEBUG: Failed to create notification');
+        }
       }
       // For multiple offers notification
       else if (newOffers.length > 1) {
-        await NotificationService.createNotification(
+        print(
+            'DEBUG: Creating notification for ${newOffers.length} multiple offers');
+
+        bool success = await NotificationService.createNotification(
           title: 'New Offers Available',
           message: '${newOffers.length} new offers found in your area',
           type: NotificationType.offer,
           link: '/nearby-offers',
         );
+
+        print('DEBUG: Multiple offers notification result: $success');
+
+        if (success) {
+          // Play alarm sound for multiple new offers
+          await AudioService.playAlarm();
+          print('DEBUG: Alarm sound played for multiple offers');
+        } else {
+          print('DEBUG: Failed to create notification for multiple offers');
+        }
       }
     } catch (e) {
       print('Error creating notifications for new offers: $e');
@@ -334,11 +398,12 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
   }
 
   void _showOfferInfo(dynamic offer) {
-    String title = offer['title']?.toString() ?? 'No Title';
-    String shopId = offer['shop']?.toString() ?? '';
+    print('Showing info for offer: ${offer}');
+    String title = offer.title?.toString() ?? 'No Title';
+    String shopId = offer.shop['_id']?.toString() ?? '';
 
     String storeName = ShopCacheService.getShopNameById(shopId,
-        fallback: offer['name']?.toString() ?? 'Unknown Store');
+        fallback: offer.shop['name']?.toString() ?? 'Unknown Store');
 
     // Get shop object for additional details if available
     Shop? shop =
@@ -350,9 +415,10 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
+              textAlign: TextAlign.center,
               title,
               style: Theme.of(context).textTheme.headlineMedium,
             ),
@@ -370,9 +436,18 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
             ],
             const SizedBox(height: 16),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                fixedSize: Size(MediaQuery.of(context).size.width, 40),
+                backgroundColor: Theme.of(context).colorScheme.onSurface,
+                foregroundColor: Theme.of(context).colorScheme.surface,
+              ),
               onPressed: () {
-                Navigator.pop(context);
-                // Navigate to offer details if needed
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => OfferView(offer: offer),
+                  ),
+                );
               },
               child: const Text('View Details'),
             )
@@ -401,6 +476,25 @@ class _GeofenceOffersScreenState extends State<GeofenceOffersScreen> {
       appBar: AppBar(
         title: const Text('Nearby Offers'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add_alert),
+            onPressed: () async {
+              // Force test new offer notification
+              if (_offers.isNotEmpty) {
+                print('DEBUG: Forcing new offer notification test...');
+                final testOffer = _offers.first as Offer;
+                _createNewOffersNotifications([testOffer]);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Forced new offer notification test')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('No offers available to test')),
+                );
+              }
+            },
+            tooltip: 'Test New Offer Notification',
+          ),
           IconButton(
             icon: const Icon(Icons.center_focus_strong),
             onPressed: _fitGeofenceBounds,

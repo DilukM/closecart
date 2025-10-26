@@ -35,6 +35,13 @@ class AuthService {
       body: jsonEncode(
           {'email': email, 'password': password, 'name': name, 'phone': phone}),
     );
+
+    if (response.statusCode == 200) {
+      final responseBody = jsonDecode(response.body);
+      final token = responseBody['token'];
+      var box = Hive.box('authBox');
+      box.put('jwtToken', token);
+    }
     return response;
   }
 
@@ -134,5 +141,18 @@ class AuthService {
     } else {
       throw Exception('Failed to update profile: ${response.statusCode}');
     }
+  }
+
+  // Logout user by clearing all stored authentication data
+  Future<void> logout() async {
+    var box = Hive.box('authBox');
+
+    // Clear all authentication-related data
+    await box.delete('jwtToken');
+    await box.delete('profileData');
+    await box.delete('userModel');
+
+    // Optionally clear the entire box if no other data is stored
+    // await box.clear();
   }
 }

@@ -729,8 +729,9 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              // Implement logout logic
+            onPressed: () async {
+              // Call the logout function to clear authentication data
+              await _authService.logout();
               Navigator.of(context).pop();
               Navigator.of(context).pushReplacementNamed('/login');
             },

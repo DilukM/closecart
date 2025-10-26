@@ -254,6 +254,9 @@ class FavoriteOfferService {
           box.put('favorites', favorites);
         }
 
+        // Clear cached favorite offers to force refresh
+        box.delete('favoriteOffers');
+
         return {
           'success': true,
           'message': 'Offer added to favorites',
@@ -342,6 +345,9 @@ class FavoriteOfferService {
         var favorites = box.get('favorites') ?? [];
         favorites.remove(offerId);
         box.put('favorites', favorites);
+
+        // Clear cached favorite offers to force refresh
+        box.delete('favoriteOffers');
 
         return {
           'success': true,
@@ -515,7 +521,7 @@ class FavoriteOfferService {
 
       // Make API request
       final response = await http.get(
-        Uri.parse('$baseUrl/$userId'),
+        Uri.parse('$baseUrl/consumer/liked-offers/$userId'),
         headers: {
           'Authorization': 'Bearer $jwt',
         },
@@ -524,9 +530,32 @@ class FavoriteOfferService {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        // Extract offers from the response
-        if (responseData is Map && responseData.containsKey('data')) {
-          List<dynamic> offerData = responseData['data'];
+        // Extract offers from the response with flexible parsing
+        List<dynamic> offerData = [];
+
+        if (responseData is List) {
+          offerData = responseData;
+        } else if (responseData is Map) {
+          // Try different possible keys where the favorites might be stored
+          if (responseData.containsKey('data')) {
+            offerData =
+                responseData['data'] is List ? responseData['data'] : [];
+          } else if (responseData.containsKey('favorites')) {
+            offerData = responseData['favorites'] is List
+                ? responseData['favorites']
+                : [];
+          } else if (responseData.containsKey('likedOffers')) {
+            offerData = responseData['likedOffers'] is List
+                ? responseData['likedOffers']
+                : [];
+          } else {
+            // If none of the expected keys exist, look for the first list in the response
+            offerData = responseData.values
+                .firstWhere((value) => value is List, orElse: () => []);
+          }
+        }
+
+        if (offerData.isNotEmpty) {
           List<String> favoriteIds = [];
 
           // Convert each offer to Offer object
@@ -542,10 +571,11 @@ class FavoriteOfferService {
           // Cache the raw data for future use
           box.put('favoriteOffers', jsonEncode(offerData));
 
+          print("Fetched ${offers.length} favorite offers");
           return offers;
         }
 
-        // Return empty list if data structure is unexpected
+        // Return empty list if no offer data found
         return [];
       } else {
         // Return cached data on error

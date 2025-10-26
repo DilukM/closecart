@@ -66,8 +66,9 @@ class _BottomNavState extends State<BottomNav> {
   Future<void> _getProfile() async {
     var box = Hive.box('authBox');
     var profile = box.get('profileData');
-    profileImageUrl = profile['imageUrl'] ??
-        'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQvj3m7aqQbQp6jX0EGDRWLGNok8H47-XZnfQ&s';
+    profileImageUrl = profile != null
+        ? profile['imageUrl']
+        : 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQvj3m7aqQbQp6jX0EGDRWLGNok8H47-XZnfQ&s';
   }
 
   Future<void> _fetchUserLocation() async {
@@ -140,13 +141,14 @@ class _BottomNavState extends State<BottomNav> {
           builder: (context) => Padding(
             padding: const EdgeInsets.all(8.0),
             child: InkWell(
-              onTap: () => setState(() {
-                _selectedIndex = 4;
-              }),
-              child: CircleAvatar(
-                child: Image.network(profileImageUrl!),
-              ),
-            ),
+                onTap: () => setState(() {
+                      _selectedIndex = 4;
+                    }),
+                child: CircleAvatar(
+                  backgroundImage: NetworkImage(
+                    profileImageUrl!,
+                  ),
+                )),
           ),
           // builder: (context) => IconButton(
           //   icon: const Icon(Icons.menu),

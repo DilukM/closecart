@@ -110,6 +110,10 @@ class WeeklyBusinessHours {
         return monday;
     }
   }
+
+  @override
+  String toString() =>
+      'WeeklyBusinessHours(monday: $monday, tuesday: $tuesday, wednesday: $wednesday, thursday: $thursday, friday: $friday, saturday: $saturday, sunday: $sunday)';
 }
 
 class Location {
